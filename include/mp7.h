@@ -27,7 +27,7 @@ extern "C" {
 /* Library version. major/minor/patch are packed as 0x00MMmmpp.
  * The plain integer constants keep MP7_VERSION_NUMBER usable in #if. */
 #define MP7_VERSION_MAJOR 0
-#define MP7_VERSION_MINOR 3
+#define MP7_VERSION_MINOR 4
 #define MP7_VERSION_PATCH 0
 #define MP7_VERSION_NUMBER \
     ((MP7_VERSION_MAJOR << 16) | (MP7_VERSION_MINOR << 8) | MP7_VERSION_PATCH)
@@ -359,6 +359,26 @@ void mp7_set_volume(mp7_context ctx, int32_t volume_q16);
 void mp7_set_balance(mp7_context ctx, int32_t balance_q16);
 void mp7_set_instr_gain(mp7_context ctx, mp7_instr instr, int32_t gain_q16);
 void mp7_set_instr_pan(mp7_context ctx, mp7_instr instr, int32_t pan_q16);
+
+/* Set the reverb send level of one instrument. `send_q16` is in Q16 units,
+ * 0..65536: 0 sends nothing, 1.0 sends the instrument's post-gain, post-pan
+ * signal to the bus at full level. The default is 0 for every instrument, so
+ * enabling the reverb does not change the factory mix until a host raises a
+ * send. Each instrument may use a different send level.
+ *
+ * The reverb's room size, wet level, damping and width are fixed at build
+ * time (see LIBPOPPY_FX_REVERB), so the send level is the only per-instrument
+ * reverb control. The bus is bypassed completely when no instrument sends to
+ * it; in a build without the reverb the sends are stored but the effect never
+ * renders.
+ *
+ * A null context or an out-of-range instrument is ignored. */
+void mp7_set_instr_fx_send(mp7_context ctx, mp7_instr instr,
+                           int32_t send_q16);
+
+/* Return the reverb send level of one instrument in Q16 units. Returns 0
+ * when `ctx` is null or `instr` is out of range. */
+int32_t mp7_get_instr_fx_send(const void *ctx, mp7_instr instr);
 
 /* Copy a view of a selection of patterns into `out`.
  *

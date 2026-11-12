@@ -3748,6 +3748,69 @@ static int command_panel(void)
     return failures == 0 ? 0 : 1;
 }
 
+#if MP7_FX_REVERB
+static int command_reverb(void)
+{
+    enum { FRAMES = 4096 };
+    static int16_t dry[FRAMES * 2];
+    static int16_t wet[FRAMES * 2];
+    mp7_context ctx = mp7_create_context(MP7_DEFAULT_SAMPLE_RATE);
+    unsigned int i;
+    int differs = 0;
+
+    if (ctx == 0) {
+        fail("mp7_create_context() failed for the reverb test");
+        return failures == 0 ? 0 : 1;
+    }
+
+    if ((mp7_get_instr_fx_send(ctx, MP7_INSTR_SNARE_1) != 0) ||
+        (mp7_get_instr_fx_send(ctx, MP7_INSTR_BASS) != 0)) {
+        fail("the instrument sends do not default to zero");
+    } else {
+        ok("the instrument sends default to zero");
+    }
+
+    /* With no send the reverb is bypassed and the mix is the dry mix. */
+    mp7_trigger(ctx, MP7_INSTR_SNARE_1, 100);
+    mp7_process(ctx, dry, FRAMES);
+
+    /* A full send adds a wet return, so the mix changes. */
+    mp7_reset(ctx);
+    mp7_set_instr_fx_send(ctx, MP7_INSTR_SNARE_1, POPPY_Q16_ONE);
+    mp7_trigger(ctx, MP7_INSTR_SNARE_1, 100);
+    mp7_process(ctx, wet, FRAMES);
+
+    for (i = 0u; i < (unsigned int)(FRAMES * 2); i++) {
+        if (dry[i] != wet[i]) {
+            differs++;
+        }
+    }
+    if (differs == 0) {
+        fail("a non-zero send did not change the mix");
+    } else {
+        ok("a non-zero send adds the reverb to the mix");
+    }
+
+    /* The send clamps, and a reset returns it to its default. */
+    mp7_set_instr_fx_send(ctx, MP7_INSTR_SNARE_1, -1);
+    if (mp7_get_instr_fx_send(ctx, MP7_INSTR_SNARE_1) != 0) {
+        fail("the reverb send did not clamp to zero");
+    } else {
+        ok("the reverb send clamps to zero");
+    }
+
+    mp7_reset(ctx);
+    if (mp7_get_instr_fx_send(ctx, MP7_INSTR_SNARE_1) != 0) {
+        fail("mp7_reset() did not restore the reverb defaults");
+    } else {
+        ok("mp7_reset() restores the reverb defaults");
+    }
+
+    mp7_destroy_context(ctx);
+    return failures == 0 ? 0 : 1;
+}
+#endif /* MP7_FX_REVERB */
+
 static void usage(const char *program)
 {
     printf("usage: %s <command>\n\n", program);
@@ -3771,6 +3834,9 @@ static void usage(const char *program)
            "                     files (default dir: build)\n"
            "  --user             verify the user pattern slots and the pattern\n"
            "                     source switch (an extended build only)\n"
+#if MP7_FX_REVERB
+           "  --reverb           verify the send reverb and its controls\n"
+#endif
            "  --help             this text\n");
 }
 
@@ -3835,6 +3901,11 @@ int main(int argc, char **argv)
     if (strcmp(command, "--user") == 0) {
         return command_user();
     }
+#if MP7_FX_REVERB
+    if (strcmp(command, "--reverb") == 0) {
+        return command_reverb();
+    }
+#endif
     if (strcmp(command, "--help") == 0 || strcmp(command, "-h") == 0) {
         usage(argv[0]);
         return 0;

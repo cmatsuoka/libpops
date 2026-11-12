@@ -38,13 +38,31 @@ mp7_context mp7_create_context(uint32_t sample_rate)
     }
 
     mp7_init((mp7_context)c, sample_rate);
+
+#if MP7_FX_REVERB
+    /* The reverb delay memory is a second allocation. Without it the
+     * context still works, but the bus has nothing to render into, so
+     * creation fails like any other allocation failure. */
+    if (poppy_reverb_init(&c->reverb) != 0) {
+        free(c);
+        return 0;
+    }
+    mp7_fx_apply(c);
+#endif
+
     return (mp7_context)c;
 }
 
 void mp7_destroy_context(mp7_context ctx)
 {
-    free(ctx);
-    ctx = NULL;
+    struct mp7_context_s *c = (struct mp7_context_s *)ctx;
+
+    if (c == 0) {
+        return;
+    }
+
+    mp7_fx_free(c);
+    free(c);
 }
 
 /* Prepare a context. Internal: mp7_create_context() and mp7_reset() drive
@@ -67,6 +85,12 @@ void mp7_init(mp7_context ctx, uint32_t sample_rate)
         sample_rate = MP7_DEFAULT_SAMPLE_RATE;
     }
     c->sample_rate = sample_rate;
+
+    /* The reverb controls are reset here, but the delay memory is not
+     * allocated: mp7_init() can be called on a caller-owned context, so it
+     * only prepares the state. mp7_create_context() attaches the bus and
+     * mp7_reset() preserves it. */
+    mp7_fx_init(c);
 
 #ifdef LIBPOPPY_EXTRA
     /* Extended-build synthesis defaults. These must match the factory voice
@@ -124,6 +148,31 @@ void mp7_set_sample_rate(mp7_context ctx, uint32_t sample_rate)
      * the current pattern from its first enabled column at the new rate. */
     mp7_pattern_set_tempo(c, c->sequencer.tempo);
     mp7_pattern_reset(c);
+
+#if MP7_FX_REVERB
+    /* The reverb's active delay lengths follow the sample rate. The delay
+     * memory itself is already sized for the maximum rate, so this only
+     * retunes and clears it. */
+    poppy_reverb_clear(&c->reverb);
+    mp7_fx_apply(c);
+#endif
+}
+
+/* Reset the context, keeping the sample rate and - in an extended build -
+ * the user-defined pattern slots. The reverb delay memory is not touched:
+ * mp7_init() zeroes the context, so the caller saves and restores it. */
+static void mp7_reset_state(mp7_context ctx, uint32_t sample_rate)
+{
+#ifdef LIBPOPPY_EXTRA
+    struct mp7_context_s *c = (struct mp7_context_s *)ctx;
+    struct mp7_user_slot saved_patterns[MP7_USER_PATTERN_COUNT];
+
+    memcpy(saved_patterns, c->user_patterns, sizeof(saved_patterns));
+    mp7_init(ctx, sample_rate);
+    memcpy(c->user_patterns, saved_patterns, sizeof(saved_patterns));
+#else
+    mp7_init(ctx, sample_rate);
+#endif
 }
 
 void mp7_reset(mp7_context ctx)
@@ -138,16 +187,20 @@ void mp7_reset(mp7_context ctx)
     /* Keep the sample rate and the user-defined pattern slots, and drop
      * everything else back to the defaults. */
     sample_rate = c->sample_rate;
-#ifdef LIBPOPPY_EXTRA
+#if MP7_FX_REVERB
     {
-        struct mp7_user_slot saved_patterns[MP7_USER_PATTERN_COUNT];
+        /* mp7_init() zeroes the whole context, so the delay memory is
+         * saved across it instead of being leaked and reallocated. */
+        struct poppy_reverb saved_reverb = c->reverb;
 
-        memcpy(saved_patterns, c->user_patterns, sizeof(saved_patterns));
-        mp7_init(ctx, sample_rate);
-        memcpy(c->user_patterns, saved_patterns, sizeof(saved_patterns));
+        mp7_reset_state(ctx, sample_rate);
+
+        c->reverb = saved_reverb;
+        poppy_reverb_clear(&c->reverb);
+        mp7_fx_apply(c);
     }
 #else
-    mp7_init(ctx, sample_rate);
+    mp7_reset_state(ctx, sample_rate);
 #endif
 }
 
@@ -183,6 +236,11 @@ void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
     for (frame = 0u; frame < frames; frame++) {
         int64_t sum_left = 0;
         int64_t sum_right = 0;
+#if MP7_FX_REVERB
+        int64_t fx_left = 0;
+        int64_t fx_right = 0;
+        const int fx_on = (c->fx_active != 0);
+#endif
 
         /* Triggers are evaluated before the sample is rendered, so hits are
          * sample-accurate. */
@@ -191,6 +249,8 @@ void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
         for (instr = 0u; instr < (unsigned int)MP7_INSTR_COUNT; instr++) {
             struct mp7_voice *voice = &c->voices[instr];
             int64_t sample;
+            int64_t left;
+            int64_t right;
 
             /* An idle voice has no envelope or filter state left to
              * advance, so skip the engine call entirely. */
@@ -204,9 +264,37 @@ void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
             }
 
             sample = poppy_mul_q31_gain(sample, c->voice_gain_q16[instr]);
-            sum_left += poppy_mixer_pan_left(sample, voice->pan_q16);
-            sum_right += poppy_mixer_pan_right(sample, voice->pan_q16);
+            left = poppy_mixer_pan_left(sample, voice->pan_q16);
+            right = poppy_mixer_pan_right(sample, voice->pan_q16);
+            sum_left += left;
+            sum_right += right;
+
+#if MP7_FX_REVERB
+            /* The send takes the instrument's post-gain, post-pan signal.
+             * A zero send skips the multiply, and when the bus is bypassed
+             * the whole block is skipped. */
+            if (fx_on) {
+                const int32_t send = c->instr_fx_send_q16[instr];
+
+                if (send != 0) {
+                    fx_left += poppy_mul_q31_gain(left, send);
+                    fx_right += poppy_mul_q31_gain(right, send);
+                }
+            }
+#endif
         }
+
+#if MP7_FX_REVERB
+        if (fx_on) {
+            int32_t wet_l;
+            int32_t wet_r;
+
+            poppy_reverb_process(&c->reverb, fx_left, fx_right,
+                                 &wet_l, &wet_r);
+            sum_left += wet_l;
+            sum_right += wet_r;
+        }
+#endif
 
         stereo_out[2u * frame] = poppy_mixer_to_q15(sum_left, c->mixer.panel_volume_q16);
         stereo_out[2u * frame + 1u] = poppy_mixer_to_q15(sum_right,

@@ -22,6 +22,40 @@
 #include "mp7.h"
 #include "mp7_fixed.h"
 
+/* The reverb is optional. Define LIBPOPPY_FX_REVERB when building the
+ * library to compile the send bus and its delay memory. Without it the bus
+ * is bypassed at compile time: no delay memory is allocated and the render
+ * loop carries no reverb code. The control API stays available in either
+ * build, so a host needs no conditional compilation. */
+#if defined(LIBPOPPY_FX_REVERB)
+#define MP7_FX_REVERB 1
+#else
+#define MP7_FX_REVERB 0
+#endif
+
+/* Number of comb and allpass lines in each channel of the reverb. */
+#define POPPY_REVERB_COMBS 8
+#define POPPY_REVERB_ALLPASSES 4
+
+/* Fixed reverb parameters, in Q16 units (1.0 is POPPY_Q16_ONE).
+ *
+ * They are compile-time values, not run-time controls: the room size is the
+ * middle of the range, the wet return is 50% so the effective reverb level of
+ * an instrument stays under its send level, the damping is 10% and the width
+ * is 70%. Override any of them with -D at build time to retune the reverb. */
+#ifndef MP7_FX_ROOM_SIZE_Q16
+#define MP7_FX_ROOM_SIZE_Q16 (POPPY_Q16_ONE / 2)
+#endif
+#ifndef MP7_FX_LEVEL_Q16
+#define MP7_FX_LEVEL_Q16 (POPPY_Q16_ONE / 2)
+#endif
+#ifndef MP7_FX_DAMPING_Q16
+#define MP7_FX_DAMPING_Q16 6554 /* 0.10 */
+#endif
+#ifndef MP7_FX_WIDTH_Q16
+#define MP7_FX_WIDTH_Q16 45875 /* 0.70 */
+#endif
+
 /* Full sine period, one entry per sample of a 1024-step cycle. The
  * oscillator and the filter coefficient setup interpolate between entries,
  * so this is the stored resolution only, not the output resolution. */
@@ -338,6 +372,41 @@ struct poppy_biquad {
     int32_t y2;
 };
 
+#if MP7_FX_REVERB
+/* One reverb comb line. The delay line lives inside the single FX block. */
+struct poppy_reverb_comb {
+    int16_t *line;   /* into reverb.block */
+    uint32_t alloc;  /* allocated length in samples (fixed at 48 kHz) */
+    uint32_t pos;    /* write position, wraps at alloc */
+    int32_t lp;      /* damping one-pole state, Q31 */
+};
+
+struct poppy_reverb_allpass {
+    int16_t *line;
+    uint32_t alloc;
+    uint32_t pos;
+};
+
+/* The shared stereo reverb. Both channels use the same line lengths, so the
+ * active lengths live here once instead of in every line.
+ *
+ * The delay memory is a single block sized once for 48 kHz. The active line
+ * lengths follow the sample rate and the room size, so the bus never
+ * allocates after context creation. */
+struct poppy_reverb {
+    int16_t *block;         /* one allocation, carved into the lines */
+    size_t block_size;      /* bytes, for teardown */
+    struct poppy_reverb_comb comb[2][POPPY_REVERB_COMBS];
+    struct poppy_reverb_allpass allpass[2][POPPY_REVERB_ALLPASSES];
+    uint32_t comb_len[POPPY_REVERB_COMBS];      /* active lengths, samples */
+    uint32_t allpass_len[POPPY_REVERB_ALLPASSES];
+
+    int32_t damp_q16;       /* damping one-pole coefficient */
+    int32_t width_q31;      /* stereo width, Q31 */
+    int32_t wet_q31;        /* wet return level, Q31 */
+};
+#endif /* MP7_FX_REVERB */
+
 enum mp7_engine {
     MP7_ENGINE_SINE_AD = 0,
     MP7_ENGINE_DUAL_TONE,
@@ -481,6 +550,18 @@ struct mp7_context_s {
      * single multiply, the same as the preset-only build. */
     int32_t voice_gain_q16[MP7_INSTR_COUNT];
 
+    /* Shared reverb controls. They exist in every build so the control API
+     * is unconditional; only MP7_FX_REVERB compiles the bus that reads
+     * them. `fx_active` is 1 when the reverb should render this block:
+     * the bus is compiled in, has delay memory, the wet level is non-zero
+     * and at least one instrument send is non-zero. Otherwise the render
+     * loop takes the dry path with no reverb work. */
+    int32_t instr_fx_send_q16[MP7_INSTR_COUNT];
+    uint8_t fx_active;
+#if MP7_FX_REVERB
+    struct poppy_reverb reverb;
+#endif
+
     uint8_t guiro_manual_gated;             /* the caller's own Guiro note-on */
     uint8_t guiro_open;                     /* the Guiro voice is gated now */
 #ifdef LIBPOPPY_EXTRA
@@ -591,5 +672,35 @@ int32_t poppy_mixer_balance_gain_q16(const struct poppy_mixer *mixer,
 int64_t poppy_mixer_pan_left(int64_t sample_q31, int32_t pan_q16);
 int64_t poppy_mixer_pan_right(int64_t sample_q31, int32_t pan_q16);
 int16_t poppy_mixer_to_q15(int64_t sum_q31, int32_t panel_volume_q16);
+
+/* Reverb controls and bus lifecycle.
+ *
+ * mp7_fx_defaults() restores the factory parameter and send values;
+ * mp7_fx_apply() re-derives the delay lengths and the cached bypass flag
+ * after a parameter, send or sample-rate change. mp7_fx_init() is the
+ * context-initialization entry point and does both. */
+void mp7_fx_defaults(struct mp7_context_s *ctx);
+void mp7_fx_apply(struct mp7_context_s *ctx);
+void mp7_fx_init(struct mp7_context_s *ctx);
+void mp7_fx_free(struct mp7_context_s *ctx);
+
+#if MP7_FX_REVERB
+/* The reverb DSP. It is independent of the context: the caller passes the
+ * parameter values so the bus stays a reusable shared component. */
+int poppy_reverb_init(struct poppy_reverb *reverb);
+void poppy_reverb_free(struct poppy_reverb *reverb);
+void poppy_reverb_configure(struct poppy_reverb *reverb,
+                            uint32_t sample_rate,
+                            int32_t room_q16,
+                            int32_t damping_q16,
+                            int32_t width_q16,
+                            int32_t wet_q16);
+void poppy_reverb_clear(struct poppy_reverb *reverb);
+void poppy_reverb_process(struct poppy_reverb *reverb,
+                          int64_t in_l,
+                          int64_t in_r,
+                          int32_t *out_l,
+                          int32_t *out_r);
+#endif /* MP7_FX_REVERB */
 
 #endif /* MP7_INTERNAL_H */

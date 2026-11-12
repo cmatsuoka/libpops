@@ -4,6 +4,7 @@
 #   all     build libpoppy.a and mp7_test
 #   check   build and run the test harness for the flags in use
 #   check-alt  run the test harness for the other EXTRA_DEF variant
+#   check-fx   build with the optional reverb and run its checks
 #   play    build the OpenAL rhythm player example
 #   clean   remove the build products
 #
@@ -53,6 +54,8 @@ EXTRA_DEF := -DLIBPOPPY_EXTRA
 
 # The other configuration, built next to the shipped one for the test run.
 ALT_DEF := $(if $(EXTRA_DEF),,-DLIBPOPPY_EXTRA)
+# The send reverb is an optional feature, tested in its own build.
+FX_DEF := -DLIBPOPPY_FX_REVERB
 
 BASE_CFLAGS       := $(CSTD) $(WARN) $(OPT) $(FLOAT_WARN) $(NO_UNWIND) $(INCLUDES) $(CFLAGS) -MMD -MP
 BASE_TEST_CFLAGS  := $(CSTD) $(WARN) $(OPT) $(NO_UNWIND) $(INCLUDES) $(CFLAGS) -MMD -MP
@@ -61,6 +64,8 @@ LIB_CFLAGS       := $(BASE_CFLAGS) $(EXTRA_DEF)
 TEST_CFLAGS      := $(BASE_TEST_CFLAGS) $(EXTRA_DEF)
 ALT_LIB_CFLAGS   := $(BASE_CFLAGS) $(ALT_DEF)
 ALT_TEST_CFLAGS  := $(BASE_TEST_CFLAGS) $(ALT_DEF)
+FX_LIB_CFLAGS    := $(BASE_CFLAGS) $(EXTRA_DEF) $(FX_DEF)
+FX_TEST_CFLAGS   := $(BASE_TEST_CFLAGS) $(EXTRA_DEF) $(FX_DEF)
 
 BUILD := build
 
@@ -74,10 +79,15 @@ TEST_OBJS := $(patsubst test/%.c,$(BUILD)/test/%.o,$(TEST_SRCS))
 ALT_LIB_OBJS  := $(patsubst src/%.c,$(BUILD)/alt/src/%.o,$(LIB_SRCS))
 ALT_TEST_OBJS := $(patsubst test/%.c,$(BUILD)/alt/test/%.o,$(TEST_SRCS))
 
+# The reverb configuration, built in its own directory so the default and
+# alternate builds are untouched.
+FX_LIB_OBJS  := $(patsubst src/%.c,$(BUILD)/fx/src/%.o,$(LIB_SRCS))
+FX_TEST_OBJS := $(patsubst test/%.c,$(BUILD)/fx/test/%.o,$(TEST_SRCS))
+
 # Per-sample audio path: build these at -O2 regardless of the size-first
 # default. If profiling shows a regression elsewhere (mp7_voice.c and
 # mp7_pattern.c also run per sample), add it here.
-HOT_SRCS := src/mp7_engines.c src/mp7_mixer.c
+HOT_SRCS := src/mp7_engines.c src/mp7_mixer.c src/mp7_fx.c
 HOT_OBJS := $(patsubst src/%.c,$(BUILD)/src/%.o,$(HOT_SRCS))
 
 $(HOT_OBJS): EXTRA_OPT := $(HOT_OPT)
@@ -85,6 +95,10 @@ $(HOT_OBJS): EXTRA_OPT := $(HOT_OPT)
 ALT_HOT_OBJS := $(patsubst src/%.c,$(BUILD)/alt/src/%.o,$(HOT_SRCS))
 
 $(ALT_HOT_OBJS): EXTRA_OPT := $(HOT_OPT)
+
+FX_HOT_OBJS := $(patsubst src/%.c,$(BUILD)/fx/src/%.o,$(HOT_SRCS))
+
+$(FX_HOT_OBJS): EXTRA_OPT := $(HOT_OPT)
 
 # examples/dinghy_app.c is built inside a Dinghy checkout, not here.
 EXAMPLE_SKIP := examples/play_rhythm.c examples/dinghy_app.c
@@ -102,7 +116,11 @@ PLAY := $(BUILD)/examples/play_rhythm
 ALT_LIB  := $(BUILD)/libpoppy_alt.a
 ALT_TEST := $(BUILD)/mp7_test_alt
 
-.PHONY: all check check-alt clean play
+# The reverb configuration.
+FX_LIB  := $(BUILD)/libpoppy_fx.a
+FX_TEST := $(BUILD)/mp7_test_fx
+
+.PHONY: all check check-alt check-fx clean play
 
 all: $(LIB)
 
@@ -120,6 +138,13 @@ $(ALT_LIB): $(ALT_LIB_OBJS)
 $(ALT_TEST): $(ALT_TEST_OBJS) $(ALT_LIB)
 	$(CC) $(ALT_TEST_CFLAGS) -o $@ $(ALT_TEST_OBJS) -L$(BUILD) -lpoppy_alt -lm
 
+$(FX_LIB): $(FX_LIB_OBJS)
+	$(AR) rcs $@ $^
+	$(RANLIB) $@
+
+$(FX_TEST): $(FX_TEST_OBJS) $(FX_LIB)
+	$(CC) $(FX_TEST_CFLAGS) -o $@ $(FX_TEST_OBJS) -L$(BUILD) -lpoppy_fx -lm
+
 $(BUILD)/src/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LIB_CFLAGS) $(EXTRA_OPT) -c -o $@ $<
@@ -135,6 +160,14 @@ $(BUILD)/alt/src/%.o: src/%.c
 $(BUILD)/alt/test/%.o: test/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(ALT_TEST_CFLAGS) -c -o $@ $<
+
+$(BUILD)/fx/src/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(FX_LIB_CFLAGS) $(EXTRA_OPT) -c -o $@ $<
+
+$(BUILD)/fx/test/%.o: test/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(FX_TEST_CFLAGS) -c -o $@ $<
 
 $(BUILD)/examples/%.o: examples/%.c
 	@mkdir -p $(dir $@)
@@ -186,9 +219,20 @@ check-alt: $(ALT_TEST) $(EXAMPLE_OBJS)
 	./$(ALT_TEST) --rhythms $(BUILD)
 	./$(ALT_TEST) --user
 
+# The optional reverb has its own build so the default and alternate
+# libraries do not need the feature. It runs the same API checks, then the
+# reverb-specific send and bypass checks.
+check-fx: $(FX_TEST)
+	./$(FX_TEST) --init
+	./$(FX_TEST) --gain
+	./$(FX_TEST) --mixer
+	./$(FX_TEST) --api
+	./$(FX_TEST) --reverb
+
 clean:
 	rm -rf $(BUILD) $(LIB) $(TEST) silence.wav
 
 -include $(LIB_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(EXAMPLE_OBJS:.o=.d) \
 	$(ALT_LIB_OBJS:.o=.d) $(ALT_TEST_OBJS:.o=.d) \
+	$(FX_LIB_OBJS:.o=.d) $(FX_TEST_OBJS:.o=.d) \
 	$(BUILD)/examples/play_rhythm.d

@@ -43,6 +43,10 @@ The library is built with the `LIBPOPPY_EXTRA` macro defined, so it carries
 the user pattern slots. A minimal, preset-only library — the 20 factory
 rhythms and nothing else.
 
+Define `LIBPOPPY_FX_REVERB` when building to add the optional send reverb.
+Without it there is no delay memory and the render loop has no reverb code;
+the reverb control API stays available and the effect is bypassed.
+
 Requirements: a C99 compiler and `make`. The library is built with
 `-std=c99 -Wall -Wextra -Werror`; the build also enables
 `-Wfloat-conversion -Wdouble-promotion` when the compiler supports them, so a
@@ -191,3 +195,26 @@ biquad is only stable below Nyquist. At 44100 Hz that limit is above
 15000 Hz, so the whole documented range is available at the default rate.
 
 `mp7_reset()` restores the factory defaults for all of them.
+
+## Reverb
+
+Build with `-DLIBPOPPY_FX_REVERB` to compile the optional stereo reverb. It is
+a send effect: every instrument has its own send level, and the wet return is
+added to the dry mix.
+
+```c
+mp7_set_instr_fx_send(ctx, MP7_INSTR_SNARE_1, 65536);  /* full send */
+mp7_set_instr_fx_send(ctx, MP7_INSTR_BASS, 0);         /* no send */
+```
+
+The reverb's room size, level, damping and width are fixed at build time, so
+the send level is the only per-instrument reverb control. The defaults are a
+mid-size room, a 50% wet return, 10% damping and 70% width. Override them
+with the build macros `MP7_FX_ROOM_SIZE_Q16`, `MP7_FX_LEVEL_Q16`,
+`MP7_FX_DAMPING_Q16` and `MP7_FX_WIDTH_Q16` (Q16 values, 65536 = 1.0).
+
+The send levels default to 0, so enabling the reverb does not change the
+factory mix until a send is raised. The bus is bypassed completely when no
+instrument sends to it; the delay memory is allocated once with the context.
+`mp7_get_instr_fx_send()` reads the send values back. Without the build macro
+the reverb never renders.
