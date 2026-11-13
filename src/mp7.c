@@ -116,6 +116,9 @@ void mp7_init(pops_context ctx, uint32_t sample_rate)
             if (param->has_cutoff) {
                 c->instr_cutoff_hz[param->slot] = param->cutoff_default_hz;
             }
+            if (param->has_highpass) {
+                c->instr_highpass_hz[param->slot] = param->highpass_default_hz;
+            }
         }
     }
 #endif
@@ -801,6 +804,53 @@ uint32_t pops_get_instr_cutoff(const void *ctx, pops_instr instr)
     }
 
     return c->instr_cutoff_hz[mp7_instr_params[instr].slot];
+}
+
+void pops_set_instr_highpass(pops_context ctx, pops_instr instr, uint32_t freq_hz)
+{
+    struct mp7_context_s *c = (struct mp7_context_s *)ctx;
+    const struct mp7_instr_param *param;
+
+    if (c == 0) {
+        return;
+    }
+
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
+        return;
+    }
+
+    param = &mp7_instr_params[instr];
+    if (!param->has_highpass) {
+        return;
+    }
+
+    if (freq_hz < param->highpass_min_hz) {
+        freq_hz = param->highpass_min_hz;
+    }
+    if (freq_hz > param->highpass_max_hz) {
+        freq_hz = param->highpass_max_hz;
+    }
+    c->instr_highpass_hz[param->slot] = freq_hz;
+    mp7_voice_apply_highpass(c, instr);
+}
+
+uint32_t pops_get_instr_highpass(const void *ctx, pops_instr instr)
+{
+    const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
+
+    if (c == 0) {
+        return 0;
+    }
+
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
+        return 0;
+    }
+
+    if (!mp7_instr_params[instr].has_highpass) {
+        return 0;
+    }
+
+    return c->instr_highpass_hz[mp7_instr_params[instr].slot];
 }
 
 void pops_set_instr_tune(pops_context ctx, pops_instr instr, int32_t tune_q16)

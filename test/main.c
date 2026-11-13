@@ -2015,6 +2015,68 @@ static int command_user(void)
             }
         }
 
+        /* The Cymbal high-passes. The band-pass stays at its fixed
+         * factory center; the factory corner is the top of the range. */
+        mp7_init(ctx, sample_rate);
+        {
+            int32_t default_hp = ctx->voices[POPS_INSTR_CYMBAL_1].highpass.b0;
+            int32_t default_bp = ctx->voices[POPS_INSTR_CYMBAL_1].bandpass.b0;
+
+            pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_1, 2000u);
+            if (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_1) != 2000u) {
+                fail("Cymbal 1 high-pass frequency was not stored");
+            }
+            if (ctx->voices[POPS_INSTR_CYMBAL_1].highpass.b0 == default_hp) {
+                fail("Cymbal 1 high-pass frequency change did not update the high-pass");
+            }
+            if (ctx->voices[POPS_INSTR_CYMBAL_1].bandpass.b0 != default_bp) {
+                fail("Cymbal 1 high-pass frequency change moved the band-pass");
+            }
+
+            pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_1, 100u);
+            if (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_1) != 2000u) {
+                fail("Cymbal 1 high-pass frequency is not clamped to the minimum");
+            }
+
+            pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_1, 20000u);
+            if (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_1) != 5500u) {
+                fail("Cymbal 1 high-pass frequency is not clamped to the maximum");
+            }
+            if (ctx->voices[POPS_INSTR_CYMBAL_1].highpass.b0 != default_hp) {
+                fail("the factory Cymbal 1 high-pass frequency did not return the factory corner");
+            }
+        }
+
+        /* Cymbal 2, and the instruments that carry no high-pass. */
+        mp7_init(ctx, sample_rate);
+        {
+            pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_2, 3000u);
+            if (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_2) != 3000u) {
+                fail("Cymbal 2 high-pass frequency was not stored");
+            }
+
+            pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_2, 500u);
+            if (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_2) != 2000u) {
+                fail("Cymbal 2 high-pass frequency is not clamped to the minimum");
+            }
+
+            pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_2, 20000u);
+            if (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_2) != 5500u) {
+                fail("Cymbal 2 high-pass frequency is not clamped to the maximum");
+            }
+
+            pops_set_instr_highpass(ctx, POPS_INSTR_HIHAT, 5000u);
+            pops_set_instr_highpass(ctx, POPS_INSTR_SNARE_1, 5000u);
+            pops_set_instr_highpass(ctx, POPS_INSTR_TAMBOURINE, 5000u);
+            pops_set_instr_highpass(ctx, POPS_INSTR_BASS, 5000u);
+            if ((pops_get_instr_highpass(ctx, POPS_INSTR_HIHAT) != 0u) ||
+                (pops_get_instr_highpass(ctx, POPS_INSTR_SNARE_1) != 0u) ||
+                (pops_get_instr_highpass(ctx, POPS_INSTR_TAMBOURINE) != 0u) ||
+                (pops_get_instr_highpass(ctx, POPS_INSTR_BASS) != 0u)) {
+                fail("a high-pass change was stored for an instrument that has none");
+            }
+        }
+
         /* Hihat decay multiplier. */
         mp7_init(ctx, sample_rate);
         {
@@ -2274,12 +2336,31 @@ static int command_user(void)
             }
 
             /* The high-passes follow the tuning as well, so the whole
-             * voice transposes. Both the Cymbal and the Tambourine have
-             * a factory high-pass at or above the factory band-pass. */
+             * voice transposes. The Cymbal's factory corner sits a
+             * hundred Hz below its band-pass and the Tambourine's above
+             * its own. */
             pops_biquad_set_highpass_coeffs(&oracle, 2750u, sample_rate);
             if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_CYMBAL_1].highpass,
                                      &oracle)) {
                 fail("the halved tuning did not move the Cymbal high-pass down");
+            }
+
+            /* A stored high-pass composes with the tuning the way the
+             * cut-off composes with it: 3000 Hz at 2.0 is the corner
+             * 6000 Hz is at 1.0. */
+            pops_set_instr_tune(ctx, POPS_INSTR_CYMBAL_1, 2 * POPS_Q16_ONE);
+            pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_1, 3000u);
+            pops_biquad_set_highpass_coeffs(&oracle, 6000u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_CYMBAL_1].highpass,
+                                     &oracle)) {
+                fail("the high-pass did not compose with the tuning multiplier");
+            }
+
+            pops_set_instr_tune(ctx, POPS_INSTR_CYMBAL_1, POPS_Q16_ONE);
+            pops_biquad_set_highpass_coeffs(&oracle, 3000u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_CYMBAL_1].highpass,
+                                     &oracle)) {
+                fail("the 1.0 tuning did not play the stored high-pass");
             }
 
             /* The Tambourine's factory high-pass sits above its factory
@@ -2352,8 +2433,15 @@ static int command_user(void)
         if (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ) {
             fail("the Hihat cut-off getter did not return the default");
         }
+        if (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_1) != MP7_CYMBAL1_HIGHPASS_HZ) {
+            fail("the Cymbal 1 high-pass getter did not return the default");
+        }
+        if (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_2) != MP7_CYMBAL2_HIGHPASS_HZ) {
+            fail("the Cymbal 2 high-pass getter did not return the default");
+        }
         if ((pops_get_instr_decay(0, POPS_INSTR_SNARE_1) != 0) ||
-            (pops_get_instr_cutoff(0, POPS_INSTR_SNARE_1) != 0u)) {
+            (pops_get_instr_cutoff(0, POPS_INSTR_SNARE_1) != 0u) ||
+            (pops_get_instr_highpass(0, POPS_INSTR_CYMBAL_1) != 0u)) {
             fail("the getters did not return 0 for a null context");
         }
 
@@ -2367,6 +2455,8 @@ static int command_user(void)
         pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 10000u);
         pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 10000u);
         pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 5000u);
+        pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_1, 2000u);
+        pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_2, 2000u);
         pops_set_instr_tune(ctx, POPS_INSTR_BASS, 2 * POPS_Q16_ONE);
         pops_set_instr_tune(ctx, POPS_INSTR_HIHAT, POPS_Q16_ONE / 2);
         pops_reset(ctx);
@@ -2379,6 +2469,8 @@ static int command_user(void)
             (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_1) != MP7_SNARE1_BANDPASS_HZ) ||
             (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_2) != MP7_SNARE2_BANDPASS_HZ) ||
             (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ) ||
+            (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_1) != MP7_CYMBAL1_HIGHPASS_HZ) ||
+            (pops_get_instr_highpass(ctx, POPS_INSTR_CYMBAL_2) != MP7_CYMBAL2_HIGHPASS_HZ) ||
             (pops_get_instr_tune(ctx, POPS_INSTR_BASS) != POPS_Q16_ONE) ||
             (pops_get_instr_tune(ctx, POPS_INSTR_HIHAT) != POPS_Q16_ONE)) {
             fail("pops_reset() did not restore the extended synthesis defaults");
@@ -2394,6 +2486,8 @@ static int command_user(void)
         pops_set_instr_cutoff(0, POPS_INSTR_SNARE_1, 1000u);
         pops_set_instr_cutoff(0, POPS_INSTR_SNARE_2, 1000u);
         pops_set_instr_cutoff(0, POPS_INSTR_HIHAT, 1000u);
+        pops_set_instr_highpass(0, POPS_INSTR_CYMBAL_1, 1000u);
+        pops_set_instr_highpass(0, POPS_INSTR_CYMBAL_2, 1000u);
         pops_set_instr_tune(0, POPS_INSTR_BASS, POPS_Q16_ONE);
         if (pops_get_instr_tune(0, POPS_INSTR_BASS) != 0) {
             fail("the tuning getter did not return 0 for a null context");
@@ -2501,11 +2595,16 @@ static int command_user(void)
             pops_set_instr_cutoff(low, POPS_INSTR_SNARE_1, 15000u);
             pops_set_instr_cutoff(low, POPS_INSTR_SNARE_2, 15000u);
             pops_set_instr_cutoff(low, POPS_INSTR_HIHAT, 15000u);
+            pops_set_instr_highpass(low, POPS_INSTR_CYMBAL_1, 5500u);
+            pops_set_instr_highpass(low, POPS_INSTR_CYMBAL_2, 5500u);
             pops_set_instr_tune(low, POPS_INSTR_SNARE_1, 2 * POPS_Q16_ONE);
             pops_set_instr_tune(low, POPS_INSTR_HIHAT, 2 * POPS_Q16_ONE);
+            pops_set_instr_tune(low, POPS_INSTR_CYMBAL_1, 2 * POPS_Q16_ONE);
+            pops_set_instr_tune(low, POPS_INSTR_CYMBAL_2, 2 * POPS_Q16_ONE);
 
             /* The cut-off moves the band-pass of all three instruments;
-             * the Hihat's high-pass stays at its factory value. */
+             * the Hihat's high-pass stays at its factory value, and the
+             * cymbal high-passes carry the tuning too. */
             bp_pole = biquad_pole_radius(&low->voices[POPS_INSTR_SNARE_1].bandpass);
             if (biquad_pole_radius(&low->voices[POPS_INSTR_SNARE_2].bandpass) >= 1.0) {
                 fail("a cut-off above Nyquist made the Snare 2 biquad unstable");
@@ -2519,6 +2618,14 @@ static int command_user(void)
                 fail("the fixed Hihat high-pass became unstable");
                 all_stable = 0;
             }
+            if (biquad_pole_radius(&low->voices[POPS_INSTR_CYMBAL_1].highpass) >= 1.0) {
+                fail("the tuned Cymbal high-pass became unstable");
+                all_stable = 0;
+            }
+            if (biquad_pole_radius(&low->voices[POPS_INSTR_CYMBAL_2].highpass) >= 1.0) {
+                fail("the tuned Cymbal 2 high-pass became unstable");
+                all_stable = 0;
+            }
 
             if (bp_pole >= 1.0) {
                 fail("a cut-off above Nyquist made the biquad unstable");
@@ -2528,7 +2635,7 @@ static int command_user(void)
         }
 
         if (all_stable) {
-            ok("the cut-offs stay stable at every sample rate");
+            ok("the cut-offs and the cymbal high-passes stay stable at every sample rate");
         }
     }
 

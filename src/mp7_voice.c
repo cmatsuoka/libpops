@@ -34,6 +34,8 @@ struct mp7_voice_config {
 #define SNARE2_BP MP7_SNARE2_BANDPASS_HZ
 #define HIHAT_BP  MP7_HIHAT_BANDPASS_HZ
 #define HIHAT_HP  MP7_HIHAT_HIGHPASS_HZ
+#define CYM1_HP   MP7_CYMBAL1_HIGHPASS_HZ
+#define CYM2_HP   MP7_CYMBAL2_HIGHPASS_HZ
 
 static const struct mp7_voice_config voice_config[POPS_INSTR_COUNT] = {
     /* Bass */
@@ -57,9 +59,9 @@ static const struct mp7_voice_config voice_config[POPS_INSTR_COUNT] = {
     /* Rimshot */
     { MP7_ENGINE_SINE_AD  ,     1650u,    0u,  0u,       0u,  1000u,   1000u,    0u,    0u,    0u,     0,     0 },
     /* Cymbal 1 */
-    { MP7_ENGINE_NOISE    ,     5600u,    0u,  0u,    5500u,  1000u, 200000u,    0u,    0u,  154u,     0,     0 },
+    { MP7_ENGINE_NOISE    ,     5600u,    0u,  0u,   CYM1_HP,  1000u, 200000u,    0u,    0u,  154u,     0,     0 },
     /* Cymbal 2 */
-    { MP7_ENGINE_NOISE    ,     5600u,    0u,  0u,    5500u,  1000u, 200000u,    0u,    0u,   77u,     0,     0 },
+    { MP7_ENGINE_NOISE    ,     5600u,    0u,  0u,   CYM2_HP,  1000u, 200000u,    0u,    0u,   77u,     0,     0 },
     /* Tambourine */
     { MP7_ENGINE_NOISE    ,     4600u,    0u,  0u,    6600u, 20000u,  80000u,    0u,    0u, 2560u,     0,     0 },
     /* Guiro */
@@ -75,39 +77,51 @@ static const struct mp7_voice_config voice_config[POPS_INSTR_COUNT] = {
  * band-pass is the one that moves; its high-pass stays at the factory
  * value under the cut-off, and its band-pass cannot go below that
  * high-pass. The high-pass does follow the tuning multiplier, so both
- * noise filters scale together. */
+ * noise filters scale together.
+ *
+ * The high-pass is the noise voice's low-end corner, ahead of the
+ * band-pass, and only the two Cymbals carry it: their band-pass is
+ * fixed at its factory center and their factory corner sits a hundred
+ * Hz below it, so the corner is the one tone control their voice has.
+ * The snares and the Hihat shape their band-pass with the cut-off
+ * instead. */
 const struct mp7_instr_param mp7_instr_params[POPS_INSTR_COUNT] = {
     /* Bass */
-    { 1, 0, 3u, 0u, 0u, 0u },
+    { 1, 0, 0, 3u, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Snare 1 */
-    { 1, 1, 0u, MP7_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_SNARE1_BANDPASS_HZ },
+    { 1, 1, 0, 0u, MP7_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_SNARE1_BANDPASS_HZ,
+      0u, 0u, 0u },
     /* Snare 2 */
-    { 1, 1, 1u, MP7_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_SNARE2_BANDPASS_HZ },
+    { 1, 1, 0, 1u, MP7_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_SNARE2_BANDPASS_HZ,
+      0u, 0u, 0u },
     /* Small Bongo */
-    { 1, 0, 4u, 0u, 0u, 0u },
+    { 1, 0, 0, 4u, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Large Bongo */
-    { 1, 0, 5u, 0u, 0u, 0u },
+    { 1, 0, 0, 5u, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Conga */
-    { 1, 0, 6u, 0u, 0u, 0u },
+    { 1, 0, 0, 6u, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Cowbell */
-    { 1, 0, 7u, 0u, 0u, 0u },
+    { 1, 0, 0, 7u, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Claves */
-    { 1, 0, 8u, 0u, 0u, 0u },
+    { 1, 0, 0, 8u, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Hihat */
-    { 1, 1, 2u, MP7_HIHAT_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_HIHAT_BANDPASS_HZ },
+    { 1, 1, 0, 2u, MP7_HIHAT_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_HIHAT_BANDPASS_HZ,
+      0u, 0u, 0u },
     /* Rimshot */
-    { 1, 0, 9u, 0u, 0u, 0u },
+    { 1, 0, 0, 9u, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Cymbal 1 */
-    { 1, 0, 10u, 0u, 0u, 0u },
+    { 1, 0, 1, 10u, 0u, 0u, 0u,
+      MP7_HIGHPASS_MIN_HZ, MP7_HIGHPASS_MAX_HZ, CYM1_HP },
     /* Cymbal 2 */
-    { 1, 0, 11u, 0u, 0u, 0u },
+    { 1, 0, 1, 11u, 0u, 0u, 0u,
+      MP7_HIGHPASS_MIN_HZ, MP7_HIGHPASS_MAX_HZ, CYM2_HP },
     /* Tambourine */
-    { 1, 0, 12u, 0u, 0u, 0u },
+    { 1, 0, 0, 12u, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Guiro: the length of the instrument is the gate the rhythm holds
      * open, not a decay, so it carries no decay multiplier. */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 0, 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u, 0u, 0u, 0u },
     /* Quijada */
-    { 1, 0, 13u, 0u, 0u, 0u }
+    { 1, 0, 0, 13u, 0u, 0u, 0u, 0u, 0u, 0u }
 };
 #endif /* LIBPOPS_EXTRA */
 
@@ -387,16 +401,31 @@ static void noise_bandpass_set(struct mp7_context_s *ctx, pops_instr instr)
                                      ctx->sample_rate);
 }
 
+/* The high-pass corner a noise voice is tuned to before the tuning
+ * multiplier: the stored high-pass of the two Cymbals, which expose
+ * one, the factory value of the voice table for the other noise
+ * voices. */
+static uint32_t noise_highpass_hz(const struct mp7_context_s *ctx,
+                                  const struct mp7_voice_config *config,
+                                  pops_instr instr)
+{
+    if (mp7_instr_params[instr].has_highpass) {
+        return ctx->instr_highpass_hz[mp7_instr_params[instr].slot];
+    }
+    return config->highpass_hz;
+}
+
 /* Retune the high-pass of a noise voice.
  *
- * The high-pass is a property of the voice itself, not of the panel or
- * of the extended parameters: the tuning multiplier moves it together
- * with the band-pass, so the voice transposes whole and keeps its
- * spectral shape at every setting. The factory high-passes of the
- * Cymbal and the Tambourine sit at or above the factory band-pass, so a
- * fixed high-pass would take the scaled band-pass below it and starve
- * the voice of output as soon as it tuned down. The high-pass follows
- * the same sample-rate limit the band-pass does. */
+ * The tuning multiplier moves the high-pass together with the band-pass,
+ * so the voice transposes whole and keeps its spectral shape at every
+ * setting. The factory corner of the Tambourine sits above its factory
+ * band-pass and the Cymbals' a hundred Hz below theirs, so a fixed
+ * high-pass would take the scaled band-pass below it and starve the
+ * voice of output as soon as it tuned down. The high-pass follows the
+ * same sample-rate limit the band-pass does, and the coefficients are
+ * written without touching the filter state, so a sounding note follows
+ * the new corner without a discontinuity. */
 static void noise_highpass_set(struct mp7_context_s *ctx, pops_instr instr)
 {
     struct mp7_voice *voice = &ctx->voices[instr];
@@ -404,7 +433,7 @@ static void noise_highpass_set(struct mp7_context_s *ctx, pops_instr instr)
     uint32_t freq_hz;
     uint32_t limit;
 
-    freq_hz = scaled_pitch_hz(config->highpass_hz,
+    freq_hz = scaled_pitch_hz(noise_highpass_hz(ctx, config, instr),
                               ctx->instr_tune_q16[instr]);
     limit = cutoff_limit_hz(ctx->sample_rate);
     if (freq_hz > limit) {
@@ -433,13 +462,30 @@ void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, pops_instr instr)
     noise_bandpass_set(ctx, instr);
 }
 
+/* Apply the high-pass of an instrument to its noise filter.
+ *
+ * The high-pass is the low-end corner of a noise voice, ahead of its
+ * band-pass, and only the two Cymbals expose it: their band-pass is
+ * fixed, so the corner is the one tone control their voice has. What
+ * the setter stores is the corner at the factory pitch; the tuning
+ * multiplier composes with it the way it composes with the cut-off. */
+void mp7_voice_apply_highpass(struct mp7_context_s *ctx, pops_instr instr)
+{
+    if (!mp7_instr_params[instr].has_highpass) {
+        return;
+    }
+
+    noise_highpass_set(ctx, instr);
+}
+
 /* Apply the tuning multiplier of an instrument to its voice.
  *
  * The multiplier scales the pitched elements of the voice: the body
  * oscillator of every pitched engine, the second tone of the dual-tone
  * engine as well, and both filters of the noise engines - the band-pass
  * centre, composed with the stored cut-off the way
- * mp7_voice_apply_cutoff() is, and the high-pass, which follows the
+ * mp7_voice_apply_cutoff() is, and the high-pass, composed with the
+ * stored high-pass of the two Cymbals and otherwise moving with the
  * multiplier alone. The Guiro's ratchet and the Quijada's click clock
  * are timing, not pitch, and stay at the factory rate.
  *
@@ -497,6 +543,9 @@ void mp7_voice_init_all(struct mp7_context_s *ctx)
         }
         if (mp7_instr_params[i].has_cutoff) {
             mp7_voice_apply_cutoff(ctx, (pops_instr)i);
+        }
+        if (mp7_instr_params[i].has_highpass) {
+            mp7_voice_apply_highpass(ctx, (pops_instr)i);
         }
     }
 

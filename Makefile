@@ -1,4 +1,4 @@
-# Makefile for the Mini Pops library (mp7).
+# Makefile for the Mini Pops library
 #
 # Targets:
 #   all     build libpops.a and libpops_test

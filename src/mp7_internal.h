@@ -213,12 +213,16 @@ struct mp7_user_slot {
  * The noise engine tunes its band-pass to the voice's frequency and its
  * high-pass to the voice's highpass field, so these are the Snare 1
  * band-pass center, the Snare 2 band-pass center, the Hihat band-pass
- * center and the Hihat high-pass cut-off. The voice table below uses the
- * same names, so the table and the defaults cannot drift apart. */
+ * center and the Hihat high-pass cut-off, plus the high-pass corners of
+ * the two Cymbals, whose high-pass the extended build exposes. The voice
+ * table below uses the same names, so the table and the defaults cannot
+ * drift apart. */
 #define MP7_SNARE1_BANDPASS_HZ 5500u
 #define MP7_SNARE2_BANDPASS_HZ 5500u
 #define MP7_HIHAT_BANDPASS_HZ  10000u
 #define MP7_HIHAT_HIGHPASS_HZ  1000u
+#define MP7_CYMBAL1_HIGHPASS_HZ 5500u
+#define MP7_CYMBAL2_HIGHPASS_HZ 5500u
 
 #ifdef LIBPOPS_EXTRA
 
@@ -234,6 +238,21 @@ struct mp7_user_slot {
 #define MP7_CUTOFF_MIN_HZ       1000u
 #define MP7_CUTOFF_MAX_HZ       15000u
 #define MP7_HIHAT_CUTOFF_MIN_HZ 2000u
+
+/* The high-pass range the extended build exposes, in Hz.
+ *
+ * The high-pass is the low-end filter of a noise voice, ahead of its
+ * band-pass. The two Cymbals are the instruments that carry it: their
+ * band-pass is fixed at its factory center of 5600 Hz, so the high-pass
+ * is their tone control. The ceiling is the factory corner of 5500 Hz,
+ * a hundred Hz below the band-pass center, so the band-pass can never
+ * end up under the high-pass and the cymbal can never be thinned past
+ * the factory sound; closer to the band-pass the high-pass would gate
+ * the band-pass output away. The floor is the same 2000 Hz the Hihat's
+ * band-pass starts at: below it the metallic voices carry low-mid wash
+ * that belongs to no metallic voice. */
+#define MP7_HIGHPASS_MIN_HZ     2000u
+#define MP7_HIGHPASS_MAX_HZ     5500u
 
 /* The decay multiplier range, in Q16 units (1.0 is POPS_Q16_ONE).
  *
@@ -251,13 +270,14 @@ struct mp7_user_slot {
 
 /* What the extended build exposes for one instrument.
  *
- * `has_decay` and `has_cutoff` say which of the two parameters the
- * instrument has; a call for an instrument that has none is ignored, so
- * the API can grow without a signature change. `cutoff_min_hz` and
- * `cutoff_max_hz` are the range of the cut-off, and `cutoff_default_hz`
- * the value the instrument starts at.
+ * `has_decay`, `has_cutoff` and `has_highpass` say which of the three
+ * parameters the instrument has; a call for an instrument that has none
+ * is ignored, so the API can grow without a signature change.
+ * `cutoff_min_hz` and `cutoff_max_hz` are the range of the cut-off, and
+ * `cutoff_default_hz` the value the instrument starts at; the
+ * `highpass_` fields are the same for the high-pass.
  *
- * `slot` is the index of the instrument in the two parameter arrays of
+ * `slot` is the index of the instrument in the parameter arrays of
  * the context. The arrays are as long as the instruments that have the
  * parameters, not as long as the instrument list, so the state stays
  * small on a target where it matters.
@@ -271,18 +291,22 @@ struct mp7_user_slot {
 struct mp7_instr_param {
     uint8_t has_decay;
     uint8_t has_cutoff;
+    uint8_t has_highpass;
     uint8_t slot;
     uint32_t cutoff_min_hz;
     uint32_t cutoff_max_hz;
     uint32_t cutoff_default_hz;
+    uint32_t highpass_min_hz;
+    uint32_t highpass_max_hz;
+    uint32_t highpass_default_hz;
 };
 
 /* The number of instruments that carry a synthesis parameter, which is
- * the length of the two parameter arrays in the context. Fourteen: the
+ * the length of the parameter arrays in the context. Fourteen: the
  * fifteen instruments except the Guiro, which carries no decay. The
  * table in src/mp7_voice.c assigns these instruments the contiguous
  * slots 0..13; Snare 1, Snare 2 and Hihat additionally carry the
- * cut-off. */
+ * cut-off, and the two Cymbals the high-pass. */
 #define MP7_PARAM_COUNT 14u
 
 extern const struct mp7_instr_param mp7_instr_params[POPS_INSTR_COUNT];
@@ -586,14 +610,15 @@ struct mp7_context_s {
 
     /* User-modifiable synthesis parameters, reset by pops_reset().
      *
-     * The decay and cut-off arrays are indexed by the slot of the
-     * instrument in mp7_instr_params[], so they are as long as the
+     * The decay, cut-off and high-pass arrays are indexed by the slot of
+     * the instrument in mp7_instr_params[], so they are as long as the
      * instruments that carry the parameters and not as long as the
      * instrument list. The tune array is indexed by the instrument:
      * every instrument has a pitch. */
     int32_t accent_gain_q16;                    /* accent gain multiplier, Q16 */
     int32_t instr_decay_q16[MP7_PARAM_COUNT];   /* decay multiplier, Q16 */
     uint32_t instr_cutoff_hz[MP7_PARAM_COUNT];  /* band-pass center, Hz */
+    uint32_t instr_highpass_hz[MP7_PARAM_COUNT]; /* noise high-pass corner, Hz */
     int32_t instr_tune_q16[POPS_INSTR_COUNT];   /* pitch multiplier, Q16 */
 #endif
 };
@@ -624,11 +649,13 @@ int32_t mp7_voice_gain_q16(const struct mp7_context_s *ctx,
 void mp7_voice_refresh_gain(struct mp7_context_s *ctx, pops_instr instr);
 
 #ifdef LIBPOPS_EXTRA
-/* Apply the decay multiplier, the cut-off or the tuning multiplier of an
- * instrument to its voice. All three are no-ops for an instrument that
- * does not have the parameter; every instrument takes the tuning. */
+/* Apply the decay multiplier, the cut-off, the high-pass or the tuning
+ * multiplier of an instrument to its voice. All four are no-ops for an
+ * instrument that does not have the parameter; every instrument takes
+ * the tuning. */
 void mp7_voice_apply_decay(struct mp7_context_s *ctx, pops_instr instr);
 void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, pops_instr instr);
+void mp7_voice_apply_highpass(struct mp7_context_s *ctx, pops_instr instr);
 void mp7_voice_apply_tune(struct mp7_context_s *ctx, pops_instr instr);
 #endif /* LIBPOPS_EXTRA */
 

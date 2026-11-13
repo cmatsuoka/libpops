@@ -172,6 +172,7 @@ pops_set_instr_decay(ctx, POPS_INSTR_BASS, 65536);       /* Bass decay, 1.0x (Q1
 pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 5500);    /* Snare 1 band-pass, Hz */
 pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 5500);    /* Snare 2 band-pass, Hz */
 pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 10000);     /* Hihat band-pass, Hz */
+pops_set_instr_highpass(ctx, POPS_INSTR_CYMBAL_1, 5500); /* Cymbal 1 high-pass, Hz */
 pops_set_instr_tune(ctx, POPS_INSTR_BASS, 131072);       /* Bass pitch, 2.0x (Q16 units) */
 pops_set_instr_tune(ctx, POPS_INSTR_COWBELL, 98304);     /* Cowbell pitch, 1.5x (Q16 units) */
 ```
@@ -189,6 +190,19 @@ has a high-pass, which the cut-off does not move: its factory value of
 1000 Hz removes the low end of the noise, and opening a high-pass past
 the band-pass would only dull the sound instead of opening it up.
 
+The two Cymbals are the other end of the chain: their band-pass is fixed
+at its factory centre of 5600 Hz, so the high-pass is the tone control of
+their voice. `pops_set_instr_highpass()` moves it over 2000..5500 Hz. The
+ceiling is the factory corner of 5500 Hz, a hundred Hz below the
+band-pass centre, so the band-pass can never end up under the high-pass
+and the cymbal can never be thinned past the factory sound; the floor is
+the same 2000 Hz the Hihat's cut-off starts at, because below it the
+metallic voices carry low-mid wash that belongs to no metallic voice.
+Lowering it lets more of the low band through and fattens the splash; at
+the top of the range the voice is the factory tick. The Snares, the
+Hihat and the Tambourine keep their high-passes fixed, so a call for
+those instruments is ignored.
+
 The tuning multiplier transposes an instrument: 65536 is the factory
 pitch, 131072 is an octave up, 32768 is an octave down, and the setter
 clamps the range to 0.5..2.0. It scales what is pitched in the voice:
@@ -199,8 +213,10 @@ cut-off, use their factory band-pass) and the high-pass. The noise
 voices' high-passes follow the tuning so that the voice transposes
 whole: the Snare 1, Snare 2 and Hihat high-passes sit far below their
 band-passes and go along inaudibly, while the Cymbal and the Tambourine
-keep theirs at or above the factory band-pass and hold their character
-at every setting. The Guiro's ratchet and the Quijada's click clock are
+carry theirs close to or above their band-pass and hold their character
+at every setting. The stored high-pass is the corner at the factory
+pitch, so the Cymbal's corner moves with the multiplier the same way
+its band-pass does. The Guiro's ratchet and the Quijada's click clock are
 timing, not pitch, and stay at the factory rate. A note that is
 sounding follows the change, and a scaled centre or high-pass is
 limited to two fifths of the sample rate like the cut-offs are.
@@ -208,12 +224,17 @@ None of them costs anything per sample: the accent is folded into the gain
 the mixer already applies to a voice, and the others only recompute
 coefficients between blocks.
 
-`pops_get_instr_decay()`, `pops_get_instr_cutoff()` and
-`pops_get_instr_tune()` read the values back.
+`pops_get_instr_decay()`, `pops_get_instr_cutoff()`,
+`pops_get_instr_highpass()` and `pops_get_instr_tune()` read the values
+back. The high-pass getter returns 0 for an instrument that has no
+*settable* high-pass: the Tambourine, the Hihat and the Snares have one,
+but it is not theirs to change.
 
 The cut-offs are also limited to two fifths of the sample rate, because a
 biquad is only stable below Nyquist. At 44100 Hz that limit is above
 15000 Hz, so the whole documented range is available at the default rate.
+The high-passes are limited the same way, and at 44100 Hz the limit is
+above their 5500 Hz ceiling.
 
 `pops_reset()` restores the factory defaults for all of them.
 

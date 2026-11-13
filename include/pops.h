@@ -594,8 +594,51 @@ void pops_set_instr_cutoff(pops_context ctx, pops_instr instr, uint32_t freq_hz)
  * together with the tuning multiplier of pops_set_instr_tune().
  *
  * Returns 0 when `ctx` is null, `instr` is out of range, or the
- * instrument has no cut-off. */
+ * instrument has no settable cut-off. */
 uint32_t pops_get_instr_cutoff(const void *ctx, pops_instr instr);
+
+/* Set the noise high-pass frequency of an instrument in Hz.
+ *
+ * `instr` selects the instrument. The supported instruments are
+ * POPS_INSTR_CYMBAL_1 and POPS_INSTR_CYMBAL_2; the call is ignored for
+ * any other instrument so the API can be extended later without a
+ * signature change.
+ *
+ * The high-pass is the low-end filter of a noise voice, ahead of its
+ * band-pass: it removes the low end of the noise before the band-pass
+ * sees it. The band-pass of the two Cymbals is fixed at its factory
+ * center of 5600 Hz, so the high-pass is the tone control of their
+ * voice: lowering it lets more of the low band through and fattens the
+ * splash, and at the top of the range the voice is the factory tick.
+ *
+ * The range is 2000..5500 Hz. The ceiling is the factory value, which
+ * sits a hundred Hz below the band-pass center, so the cymbal can never
+ * be played thinner than the factory sound and the band-pass can never
+ * end up under the high-pass; the floor keeps the metallic voices out
+ * of the low band the way the Hihat's cut-off floor does.
+ *
+ * The value is the corner at the factory pitch: the tuning multiplier
+ * of pops_set_instr_tune() composes with it the way it composes with
+ * the cut-off, moving the high-pass and the band-pass together. The
+ * factory defaults are 5500 Hz for both Cymbals.
+ *
+ * The filter is stable only below the sample rate's Nyquist frequency,
+ * so the frequency is also limited to two fifths of the sample rate.
+ * At 44100 Hz that is above 5500 Hz, so the whole documented range is
+ * available at the default rate. */
+void pops_set_instr_highpass(pops_context ctx, pops_instr instr, uint32_t freq_hz);
+
+/* Return the noise high-pass frequency of an instrument in Hz.
+ *
+ * The value is the one the library holds, after the clamp of
+ * pops_set_instr_highpass(). The sample-rate limit of the filter is not
+ * part of it: it is applied when the filter coefficients are computed,
+ * together with the tuning multiplier of pops_set_instr_tune().
+ *
+ * Returns 0 when `ctx` is null, `instr` is out of range, or the
+ * instrument has no settable high-pass: the Tambourine, the Hihat and
+ * the Snares have one, but it is fixed. */
+uint32_t pops_get_instr_highpass(const void *ctx, pops_instr instr);
 
 /* Set the tuning multiplier of an instrument.
  *
@@ -605,10 +648,11 @@ uint32_t pops_get_instr_cutoff(const void *ctx, pops_instr instr);
  * oscillator of the sine, dual-tone, Guiro and Quijada engines, the
  * second tone of the dual-tone engine as well, and, in the noise
  * engines, the band-pass center composed with the cut-off of
- * pops_set_instr_cutoff() and the high-pass, which follows the
- * multiplier alone so the voice transposes whole. The Guiro's ratchet
- * rate and the Quijada's click clock are timing, not pitch, and stay
- * at the factory rate.
+ * pops_set_instr_cutoff() and the high-pass, scaled from its corner the
+ * same way - the factory corner, or the one set by
+ * pops_set_instr_highpass() for the two Cymbals - so the voice
+ * transposes whole. The Guiro's ratchet rate and the Quijada's click
+ * clock are timing, not pitch, and stay at the factory rate.
  *
  * Values are Q16 units: 65536 is the factory pitch and the default,
  * 32768 is an octave down and 131072 is an octave up. Clamped to
