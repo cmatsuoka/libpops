@@ -40,14 +40,14 @@
 /* Fixed reverb parameters, in Q16 units (1.0 is POPS_Q16_ONE).
  *
  * They are compile-time values, not run-time controls: the room size is the
- * middle of the range, the wet return is 50% so the effective reverb level of
- * an instrument stays under its send level, the damping is 10% and the width
- * is 70%. Override any of them with -D at build time to retune the reverb. */
+ * middle of the range, the wet return is 70%, the damping is 10% and the
+ * width is 70%. Override any of them with -D at build time to retune the
+ * reverb. */
 #ifndef MP7_FX_ROOM_SIZE_Q16
 #define MP7_FX_ROOM_SIZE_Q16 (POPS_Q16_ONE / 2)
 #endif
 #ifndef MP7_FX_LEVEL_Q16
-#define MP7_FX_LEVEL_Q16 (POPS_Q16_ONE / 2)
+#define MP7_FX_LEVEL_Q16 45875 /* 0.70 */
 #endif
 #ifndef MP7_FX_DAMPING_Q16
 #define MP7_FX_DAMPING_Q16 6554 /* 0.10 */
@@ -235,9 +235,12 @@ struct mp7_user_slot {
 #define MP7_CUTOFF_MAX_HZ       15000u
 #define MP7_HIHAT_CUTOFF_MIN_HZ 2000u
 
-/* The decay multiplier range, in Q16 units (1.0 is POPS_Q16_ONE). */
-#define MP7_DECAY_MIN_Q16 (POPS_Q16_ONE / 4)
-#define MP7_DECAY_MAX_Q16 (4 * POPS_Q16_ONE)
+/* The decay multiplier range, in Q16 units (1.0 is POPS_Q16_ONE).
+ *
+ * 0.2 and 5.0 bound the decay between a fifth and five times the
+ * factory value. */
+#define MP7_DECAY_MIN_Q16 (POPS_Q16_ONE / 5)
+#define MP7_DECAY_MAX_Q16 (5 * POPS_Q16_ONE)
 
 /* The tuning multiplier range, in Q16 units (1.0 is POPS_Q16_ONE).
  *
@@ -274,9 +277,13 @@ struct mp7_instr_param {
     uint32_t cutoff_default_hz;
 };
 
-/* The number of instruments that carry the synthesis parameters, which is
- * the length of the two parameter arrays in the context. */
-#define MP7_PARAM_COUNT 3u
+/* The number of instruments that carry a synthesis parameter, which is
+ * the length of the two parameter arrays in the context. Fourteen: the
+ * fifteen instruments except the Guiro, which carries no decay. The
+ * table in src/mp7_voice.c assigns these instruments the contiguous
+ * slots 0..13; Snare 1, Snare 2 and Hihat additionally carry the
+ * cut-off. */
+#define MP7_PARAM_COUNT 14u
 
 extern const struct mp7_instr_param mp7_instr_params[POPS_INSTR_COUNT];
 

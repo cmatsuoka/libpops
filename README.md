@@ -166,10 +166,9 @@ controls, and they start from the factory values, so a context that never
 touches them sounds exactly like the preset build.
 
 ```c
-pops_set_accent_gain(ctx, 78643);                       /* accented columns, 1.2x (Q16 units) */
+pops_set_accent_gain(ctx, 78643);                        /* accented columns, 1.2x (Q16 units) */
 pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, 65536);    /* Snare 1 decay, 1.0x (Q16 units) */
-pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, 65536);    /* Snare 2 decay, 1.0x (Q16 units) */
-pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 65536);      /* Hihat decay, 1.0x (Q16 units) */
+pops_set_instr_decay(ctx, POPS_INSTR_BASS, 65536);       /* Bass decay, 1.0x (Q16 units) */
 pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 5500);    /* Snare 1 band-pass, Hz */
 pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 5500);    /* Snare 2 band-pass, Hz */
 pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 10000);     /* Hihat band-pass, Hz */
@@ -180,7 +179,10 @@ pops_set_instr_tune(ctx, POPS_INSTR_COWBELL, 98304);     /* Cowbell pitch, 1.5x 
 The accent gain applies to user-pattern columns that set the
 `POPS_PATTERN_ACCENT` bit, and is read when the column fires, so a change
 takes effect on the notes triggered after it. The decay controls scale the
-factory decay time of the Snare 1, Snare 2 and Hihat; a note that is already
+factory decay time of every instrument that has one: all of them but the
+Guiro, whose length is the gate the rhythm holds open rather than a decay.
+On the Conga and the Cowbell the multiplier scales both tones' decays
+together, so the instrument keeps its shape. A note that is already
 sounding keeps playing and decays at the new rate. The cut-offs move the
 band-pass centre of the instrument, for all three of them. The Hihat also
 has a high-pass, which the cut-off does not move: its factory value of
@@ -228,7 +230,7 @@ pops_set_instr_fx_send(ctx, POPS_INSTR_BASS, 0);         /* no send */
 
 The reverb's room size, level, damping and width are fixed at build time, so
 the send level is the only per-instrument reverb control. The defaults are a
-mid-size room, a 50% wet return, 10% damping and 70% width. Override them
+mid-size room, a 70% wet return, 10% damping and 70% width. Override them
 with the build macros `MP7_FX_ROOM_SIZE_Q16`, `MP7_FX_LEVEL_Q16`,
 `MP7_FX_DAMPING_Q16` and `MP7_FX_WIDTH_Q16` (Q16 values, 65536 = 1.0).
 

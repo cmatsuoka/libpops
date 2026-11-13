@@ -78,35 +78,36 @@ static const struct mp7_voice_config voice_config[POPS_INSTR_COUNT] = {
  * noise filters scale together. */
 const struct mp7_instr_param mp7_instr_params[POPS_INSTR_COUNT] = {
     /* Bass */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 3u, 0u, 0u, 0u },
     /* Snare 1 */
     { 1, 1, 0u, MP7_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_SNARE1_BANDPASS_HZ },
     /* Snare 2 */
     { 1, 1, 1u, MP7_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_SNARE2_BANDPASS_HZ },
     /* Small Bongo */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 4u, 0u, 0u, 0u },
     /* Large Bongo */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 5u, 0u, 0u, 0u },
     /* Conga */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 6u, 0u, 0u, 0u },
     /* Cowbell */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 7u, 0u, 0u, 0u },
     /* Claves */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 8u, 0u, 0u, 0u },
     /* Hihat */
     { 1, 1, 2u, MP7_HIHAT_CUTOFF_MIN_HZ, MP7_CUTOFF_MAX_HZ, MP7_HIHAT_BANDPASS_HZ },
     /* Rimshot */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 9u, 0u, 0u, 0u },
     /* Cymbal 1 */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 10u, 0u, 0u, 0u },
     /* Cymbal 2 */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
+    { 1, 0, 11u, 0u, 0u, 0u },
     /* Tambourine */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
-    /* Guiro */
+    { 1, 0, 12u, 0u, 0u, 0u },
+    /* Guiro: the length of the instrument is the gate the rhythm holds
+     * open, not a decay, so it carries no decay multiplier. */
     { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
     /* Quijada */
-    { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u }
+    { 1, 0, 13u, 0u, 0u, 0u }
 };
 #endif /* LIBPOPS_EXTRA */
 
@@ -260,14 +261,14 @@ static void env_retime(struct pops_env *env,
     }
 }
 
-/* The decay of an instrument, scaled by its decay multiplier.
+/* A decay time of an instrument, scaled by its decay multiplier.
  *
- * The multiplier is clamped to 0.25..4.0 by the setter, and the longest
- * factory decay is 400 ms, so the scaled time always fits in 32 bits. */
-static uint32_t scaled_decay_us(const struct mp7_voice_config *config,
-                                int32_t decay_q16)
+ * The multiplier is clamped to 0.2..5.0 by the setter, and the longest
+ * factory decay is 400 ms, so the scaled time stays within two seconds
+ * and fits in 32 bits with room to spare. */
+static uint32_t scaled_decay_us(uint32_t decay_us, int32_t decay_q16)
 {
-    int64_t scaled = ((int64_t)config->decay_us * (int64_t)decay_q16 +
+    int64_t scaled = ((int64_t)decay_us * (int64_t)decay_q16 +
                       (POPS_Q16_ONE / 2)) / POPS_Q16_ONE;
 
     if (scaled < 0) {
@@ -290,24 +291,59 @@ static uint32_t scaled_pitch_hz(uint32_t freq_hz, int32_t tune_q16)
 
 /* Apply the decay multiplier of an instrument to its envelopes.
  *
- * Every instrument that has a decay multiplier is a noise voice, whose
- * amplitude and tone envelopes both follow the factory decay, so one
- * function covers all of them. */
+ * The multiplier scales the factory decay time of every decay-bearing
+ * envelope the voice has, so the voice keeps its shape at every
+ * multiplier: the amplitude envelope of the sine, dual-tone, Quijada
+ * and noise engines, the tone envelope of the noise engines, and the
+ * second tone of the dual-tone engine, whose factory decay is the
+ * shorter decay2. The Guiro carries no decay multiplier: the length of
+ * the instrument is the gate the rhythm holds open, and its only
+ * factory decay, the per-tooth body ring, is not the length of the
+ * instrument. */
 void mp7_voice_apply_decay(struct mp7_context_s *ctx, pops_instr instr)
 {
     struct mp7_voice *voice = &ctx->voices[instr];
     const struct mp7_voice_config *config = &voice_config[instr];
     uint8_t slot = mp7_instr_params[instr].slot;
     uint32_t decay_us;
+    uint32_t decay2_us;
 
     if (!mp7_instr_params[instr].has_decay) {
         return;
     }
 
-    decay_us = scaled_decay_us(config, ctx->instr_decay_q16[slot]);
+    decay_us = scaled_decay_us(config->decay_us, ctx->instr_decay_q16[slot]);
 
-    env_retime(&voice->amp_env, config->attack_us, decay_us, ctx->sample_rate);
-    env_retime(&voice->aux_env, config->attack_us, decay_us, ctx->sample_rate);
+    switch (voice->engine) {
+    case MP7_ENGINE_SINE_AD:
+        env_retime(&voice->amp_env, config->attack_us, decay_us,
+                   ctx->sample_rate);
+        break;
+
+    case MP7_ENGINE_DUAL_TONE:
+        decay2_us = scaled_decay_us(config->decay2_us,
+                                    ctx->instr_decay_q16[slot]);
+        env_retime(&voice->amp_env, config->attack_us, decay_us,
+                   ctx->sample_rate);
+        env_retime(&voice->aux_env, config->attack_us, decay2_us,
+                   ctx->sample_rate);
+        break;
+
+    case MP7_ENGINE_NOISE:
+        env_retime(&voice->amp_env, config->attack_us, decay_us,
+                   ctx->sample_rate);
+        env_retime(&voice->aux_env, config->attack_us, decay_us,
+                   ctx->sample_rate);
+        break;
+
+    case MP7_ENGINE_QUIJADA:
+        env_retime(&voice->amp_env, config->attack_us, decay_us,
+                   ctx->sample_rate);
+        break;
+
+    default:
+        break;
+    }
 }
 
 /* The band-pass centre a noise voice is tuned to before the tuning

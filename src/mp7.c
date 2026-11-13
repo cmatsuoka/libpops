@@ -113,7 +113,9 @@ void mp7_init(pops_context ctx, uint32_t sample_rate)
             }
             /* The decay multiplier is 1.0, the factory decay. */
             c->instr_decay_q16[param->slot] = POPS_Q16_ONE;
-            c->instr_cutoff_hz[param->slot] = param->cutoff_default_hz;
+            if (param->has_cutoff) {
+                c->instr_cutoff_hz[param->slot] = param->cutoff_default_hz;
+            }
         }
     }
 #endif

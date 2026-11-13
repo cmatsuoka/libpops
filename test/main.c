@@ -1915,13 +1915,13 @@ static int command_user(void)
             }
         }
 
-        pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, 8 * POPS_Q16_ONE);
-        if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != 4 * POPS_Q16_ONE) {
-            fail("Snare 1 decay multiplier is not clamped to 4.0");
+        pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, 16 * POPS_Q16_ONE);
+        if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != 5 * POPS_Q16_ONE) {
+            fail("Snare 1 decay multiplier is not clamped to 5.0");
         }
-        pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, POPS_Q16_ONE / 8);
-        if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != POPS_Q16_ONE / 4) {
-            fail("Snare 1 decay multiplier is not clamped to 0.25");
+        pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, POPS_Q16_ONE / 16);
+        if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != POPS_Q16_ONE / 5) {
+            fail("Snare 1 decay multiplier is not clamped to 0.2");
         }
 
         /* Snare 1 band-pass frequency. */
@@ -1987,13 +1987,13 @@ static int command_user(void)
                 fail("doubling Snare 2 decay did not lengthen the decay");
             }
 
-            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, 8 * POPS_Q16_ONE);
-            if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_2) != 4 * POPS_Q16_ONE) {
-                fail("Snare 2 decay multiplier is not clamped to 4.0");
+            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, 16 * POPS_Q16_ONE);
+            if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_2) != 5 * POPS_Q16_ONE) {
+                fail("Snare 2 decay multiplier is not clamped to 5.0");
             }
-            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, POPS_Q16_ONE / 8);
-            if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_2) != POPS_Q16_ONE / 4) {
-                fail("Snare 2 decay multiplier is not clamped to 0.25");
+            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, POPS_Q16_ONE / 16);
+            if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_2) != POPS_Q16_ONE / 5) {
+                fail("Snare 2 decay multiplier is not clamped to 0.2");
             }
 
             pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 10000u);
@@ -2025,33 +2025,111 @@ static int command_user(void)
                 fail("doubling Hihat decay did not lengthen the decay");
             }
 
-            pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 8 * POPS_Q16_ONE);
-            if (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != 4 * POPS_Q16_ONE) {
-                fail("Hihat decay multiplier is not clamped to 4.0");
+            pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 16 * POPS_Q16_ONE);
+            if (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != 5 * POPS_Q16_ONE) {
+                fail("Hihat decay multiplier is not clamped to 5.0");
             }
-            pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, POPS_Q16_ONE / 8);
-            if (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != POPS_Q16_ONE / 4) {
-                fail("Hihat decay multiplier is not clamped to 0.25");
+            pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, POPS_Q16_ONE / 16);
+            if (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != POPS_Q16_ONE / 5) {
+                fail("Hihat decay multiplier is not clamped to 0.2");
             }
         }
 
-        /* An instrument without the parameter ignores the call. */
+        /* The decay scales the factory decay of every instrument that has
+         * one, engine by engine. The untouched Cowbell identity, the 200 ms
+         * Bass, the 250 ms + 4 ms Conga pair, the 300 ms Quijada body and
+         * the 200 ms Cymbal 1 pair cover the sine, dual-tone, Quijada and
+         * noise engines; the snare and the Hihat cover the noise engine
+         * above. */
         mp7_init(ctx, sample_rate);
         {
-            int32_t bass_decay = ctx->voices[POPS_INSTR_BASS].amp_env.decay_coef;
-            int32_t bass_b0 = ctx->voices[POPS_INSTR_BASS].bandpass.b0;
+            if (ctx->voices[POPS_INSTR_COWBELL].amp_env.decay_coef !=
+                pops_env_coef_us(50000u, sample_rate)) {
+                fail("the 1.0 decay did not leave the Cowbell at its factory decay");
+            }
+            if (ctx->voices[POPS_INSTR_COWBELL].aux_env.decay_coef !=
+                pops_env_coef_us(4000u, sample_rate)) {
+                fail("the 1.0 decay did not leave the Cowbell's short tone alone");
+            }
 
-            pops_set_instr_decay(ctx, POPS_INSTR_BASS, 3 * POPS_Q16_ONE);
+            pops_set_instr_decay(ctx, POPS_INSTR_BASS, 2 * POPS_Q16_ONE);
+            if (ctx->voices[POPS_INSTR_BASS].amp_env.decay_coef !=
+                pops_env_coef_us(400000u, sample_rate)) {
+                fail("doubling the Bass decay did not double its decay time");
+            }
+
+            pops_set_instr_decay(ctx, POPS_INSTR_CONGA, POPS_Q16_ONE / 2);
+            if (ctx->voices[POPS_INSTR_CONGA].amp_env.decay_coef !=
+                pops_env_coef_us(125000u, sample_rate)) {
+                fail("halving the Conga decay did not halve its body decay");
+            }
+            if (ctx->voices[POPS_INSTR_CONGA].aux_env.decay_coef !=
+                pops_env_coef_us(2000u, sample_rate)) {
+                fail("halving the Conga decay did not halve its strike decay");
+            }
+
+            pops_set_instr_decay(ctx, POPS_INSTR_QUIJADA, 2 * POPS_Q16_ONE);
+            if (ctx->voices[POPS_INSTR_QUIJADA].amp_env.decay_coef !=
+                pops_env_coef_us(600000u, sample_rate)) {
+                fail("doubling the Quijada decay did not double its body decay");
+            }
+
+            pops_set_instr_decay(ctx, POPS_INSTR_CYMBAL_1, 2 * POPS_Q16_ONE);
+            if (ctx->voices[POPS_INSTR_CYMBAL_1].amp_env.decay_coef !=
+                pops_env_coef_us(400000u, sample_rate)) {
+                fail("doubling the Cymbal decay did not double its amplitude decay");
+            }
+            if (ctx->voices[POPS_INSTR_CYMBAL_1].aux_env.decay_coef !=
+                pops_env_coef_us(400000u, sample_rate)) {
+                fail("doubling the Cymbal decay did not double its tone decay");
+            }
+        }
+
+        /* Every parameter-bearing instrument gets a slot of its own, and
+         * the slots enumerate 0..MP7_PARAM_COUNT-1 with none missing and
+         * none repeated. */
+        {
+            unsigned int seen[MP7_PARAM_COUNT];
+            unsigned int i;
+            unsigned int j;
+
+            for (j = 0u; j < MP7_PARAM_COUNT; j++) {
+                seen[j] = 0u;
+            }
+            for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+                if (mp7_instr_params[i].slot == MP7_PARAM_SLOT_NONE) {
+                    continue;
+                }
+                if ((mp7_instr_params[i].slot >= MP7_PARAM_COUNT) ||
+                    (seen[mp7_instr_params[i].slot]++ != 0u)) {
+                    fail("the instrument parameter slots are not a clean 0..MP7_PARAM_COUNT-1");
+                    break;
+                }
+            }
+        }
+
+        /* The Guiro is the one instrument with neither parameter: its
+         * length is the gate the rhythm holds open, not a decay, and it
+         * has no band-pass. A call for it must reach neither of its
+         * envelopes, gate and body ring alike. */
+        mp7_init(ctx, sample_rate);
+        {
+            int32_t guiro_amp = ctx->voices[POPS_INSTR_GUIRO].amp_env.decay_coef;
+            int32_t guiro_body = ctx->voices[POPS_INSTR_GUIRO].body_env.decay_coef;
+
+            pops_set_instr_decay(ctx, POPS_INSTR_GUIRO, 3 * POPS_Q16_ONE);
+            pops_set_instr_cutoff(ctx, POPS_INSTR_GUIRO, 3000u);
+            if ((pops_get_instr_decay(ctx, POPS_INSTR_GUIRO) != 0) ||
+                (pops_get_instr_cutoff(ctx, POPS_INSTR_GUIRO) != 0u)) {
+                fail("a parameter was stored for an instrument that has none");
+            }
+            if ((ctx->voices[POPS_INSTR_GUIRO].amp_env.decay_coef != guiro_amp) ||
+                (ctx->voices[POPS_INSTR_GUIRO].body_env.decay_coef != guiro_body)) {
+                fail("a parameter change reached the Guiro's gate or body ring");
+            }
+
+            /* The Bass has a decay but no cut-off. */
             pops_set_instr_cutoff(ctx, POPS_INSTR_BASS, 3000u);
-            if (ctx->voices[POPS_INSTR_BASS].amp_env.decay_coef != bass_decay) {
-                fail("a decay change reached an instrument that has none");
-            }
-            if (ctx->voices[POPS_INSTR_BASS].bandpass.b0 != bass_b0) {
-                fail("a cut-off change reached an instrument that has none");
-            }
-            if (pops_get_instr_decay(ctx, POPS_INSTR_BASS) != 0) {
-                fail("a decay change was stored for an instrument that has none");
-            }
             if (pops_get_instr_cutoff(ctx, POPS_INSTR_BASS) != 0u) {
                 fail("a cut-off change was stored for an instrument that has none");
             }
@@ -2284,6 +2362,8 @@ static int command_user(void)
         pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, 4 * POPS_Q16_ONE);
         pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, 4 * POPS_Q16_ONE);
         pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 4 * POPS_Q16_ONE);
+        pops_set_instr_decay(ctx, POPS_INSTR_BASS, 3 * POPS_Q16_ONE);
+        pops_set_instr_decay(ctx, POPS_INSTR_TAMBOURINE, POPS_Q16_ONE / 4);
         pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 10000u);
         pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 10000u);
         pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 5000u);
@@ -2294,6 +2374,8 @@ static int command_user(void)
             (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != POPS_Q16_ONE) ||
             (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_2) != POPS_Q16_ONE) ||
             (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != POPS_Q16_ONE) ||
+            (pops_get_instr_decay(ctx, POPS_INSTR_BASS) != POPS_Q16_ONE) ||
+            (pops_get_instr_decay(ctx, POPS_INSTR_TAMBOURINE) != POPS_Q16_ONE) ||
             (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_1) != MP7_SNARE1_BANDPASS_HZ) ||
             (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_2) != MP7_SNARE2_BANDPASS_HZ) ||
             (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ) ||

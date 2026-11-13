@@ -537,14 +537,17 @@ int32_t pops_get_accent_gain(const void *ctx);
 
 /* Set the decay time multiplier for an instrument.
  *
- * `instr` selects the instrument. The supported instruments are
- * POPS_INSTR_SNARE_1, POPS_INSTR_SNARE_2 and POPS_INSTR_HIHAT; the call
- * is ignored for any other instrument so the API can be extended
- * later without a signature change.
+ * `instr` selects the instrument. Every instrument takes the decay
+ * except the Guiro: its length is the gate the rhythm holds open, so it
+ * has no decay of its own to scale. The call is ignored for instruments
+ * without a decay so the API can be extended later without a signature
+ * change.
  *
  * 1.0 is the factory decay, and it is the default for every
  * instrument. Values below 1.0 shorten the decay; values above 1.0
- * lengthen it. Clamped to 0.25..4.0.
+ * lengthen it. On the dual-tone instruments the multiplier scales both
+ * tones' decays together, so the instrument keeps its shape. Clamped
+ * to 0.2..5.0.
  *
  * A note that is already sounding is not cut off: it keeps playing and
  * decays at the new rate from the next sample. */
