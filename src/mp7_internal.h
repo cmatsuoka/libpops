@@ -225,10 +225,12 @@ struct mp7_user_slot {
 /* The cut-off range the extended build exposes, in Hz.
  *
  * The cut-off is the band-pass center of the instrument, for every
- * instrument that has one: the Hihat's high-pass is fixed at its factory
- * value, because moving it above the band-pass only dulls the sound
- * instead of opening it up. The Hihat's band-pass cannot go below its
- * fixed high-pass, so its range starts higher than the snares'. */
+ * instrument that has one, and it never moves the noise high-pass:
+ * opening a high-pass past the band-pass only dulls the sound instead
+ * of opening it up. The high-pass follows the tuning multiplier
+ * instead, so the Hihat's band-pass and high-pass scale together and
+ * the band-pass cannot reach the high-pass at any tuning; for the same
+ * reason its range starts higher than the snares'. */
 #define MP7_CUTOFF_MIN_HZ       1000u
 #define MP7_CUTOFF_MAX_HZ       15000u
 #define MP7_HIHAT_CUTOFF_MIN_HZ 2000u
@@ -236,6 +238,13 @@ struct mp7_user_slot {
 /* The decay multiplier range, in Q16 units (1.0 is POPS_Q16_ONE). */
 #define MP7_DECAY_MIN_Q16 (POPS_Q16_ONE / 4)
 #define MP7_DECAY_MAX_Q16 (4 * POPS_Q16_ONE)
+
+/* The tuning multiplier range, in Q16 units (1.0 is POPS_Q16_ONE).
+ *
+ * 0.5 and 2.0 are one octave down and up, so the tuning moves an
+ * instrument an octave down or up from its factory pitch. */
+#define MP7_TUNE_MIN_Q16 (POPS_Q16_ONE / 2)
+#define MP7_TUNE_MAX_Q16 (2 * POPS_Q16_ONE)
 
 /* What the extended build exposes for one instrument.
  *
@@ -250,9 +259,10 @@ struct mp7_user_slot {
  * parameters, not as long as the instrument list, so the state stays
  * small on a target where it matters.
  *
- * The cut-off is always the band-pass center of the instrument's filter.
- * The Hihat's high-pass stays at its factory value, because moving it
- * above the band-pass only dulls the sound instead of opening it up. */
+ * The cut-off is always the band-pass center of the instrument's filter,
+ * and the Hihat's high-pass never follows the cut-off: opening a
+ * high-pass past the band-pass only dulls the sound instead of opening
+ * it up. The high-pass follows the tuning multiplier instead. */
 #define MP7_PARAM_SLOT_NONE 0xFFu
 
 struct mp7_instr_param {
@@ -569,12 +579,15 @@ struct mp7_context_s {
 
     /* User-modifiable synthesis parameters, reset by pops_reset().
      *
-     * The two arrays are indexed by the slot of the instrument in
-     * mp7_instr_params[], so they are as long as the instruments that
-     * carry the parameters and not as long as the instrument list. */
+     * The decay and cut-off arrays are indexed by the slot of the
+     * instrument in mp7_instr_params[], so they are as long as the
+     * instruments that carry the parameters and not as long as the
+     * instrument list. The tune array is indexed by the instrument:
+     * every instrument has a pitch. */
     int32_t accent_gain_q16;                    /* accent gain multiplier, Q16 */
     int32_t instr_decay_q16[MP7_PARAM_COUNT];   /* decay multiplier, Q16 */
     uint32_t instr_cutoff_hz[MP7_PARAM_COUNT];  /* band-pass center, Hz */
+    int32_t instr_tune_q16[POPS_INSTR_COUNT];   /* pitch multiplier, Q16 */
 #endif
 };
 
@@ -604,11 +617,12 @@ int32_t mp7_voice_gain_q16(const struct mp7_context_s *ctx,
 void mp7_voice_refresh_gain(struct mp7_context_s *ctx, pops_instr instr);
 
 #ifdef LIBPOPS_EXTRA
-/* Apply the decay multiplier or the cut-off of an instrument to its
- * voice. Both are no-ops for an instrument that does not have the
- * parameter. */
+/* Apply the decay multiplier, the cut-off or the tuning multiplier of an
+ * instrument to its voice. All three are no-ops for an instrument that
+ * does not have the parameter; every instrument takes the tuning. */
 void mp7_voice_apply_decay(struct mp7_context_s *ctx, pops_instr instr);
 void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, pops_instr instr);
+void mp7_voice_apply_tune(struct mp7_context_s *ctx, pops_instr instr);
 #endif /* LIBPOPS_EXTRA */
 
 int64_t mp7_engine_process(struct mp7_voice *voice);

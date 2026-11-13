@@ -100,6 +100,11 @@ void mp7_init(pops_context ctx, uint32_t sample_rate)
     {
         unsigned int i;
 
+        /* Every instrument takes the tuning; 1.0 is the factory pitch. */
+        for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+            c->instr_tune_q16[i] = POPS_Q16_ONE;
+        }
+
         for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
             const struct mp7_instr_param *param = &mp7_instr_params[i];
 
@@ -794,6 +799,38 @@ uint32_t pops_get_instr_cutoff(const void *ctx, pops_instr instr)
     }
 
     return c->instr_cutoff_hz[mp7_instr_params[instr].slot];
+}
+
+void pops_set_instr_tune(pops_context ctx, pops_instr instr, int32_t tune_q16)
+{
+    struct mp7_context_s *c = (struct mp7_context_s *)ctx;
+
+    if (c == 0) {
+        return;
+    }
+
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
+        return;
+    }
+
+    c->instr_tune_q16[instr] =
+        pops_clamp_i32(tune_q16, MP7_TUNE_MIN_Q16, MP7_TUNE_MAX_Q16);
+    mp7_voice_apply_tune(c, instr);
+}
+
+int32_t pops_get_instr_tune(const void *ctx, pops_instr instr)
+{
+    const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
+
+    if (c == 0) {
+        return 0;
+    }
+
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
+        return 0;
+    }
+
+    return c->instr_tune_q16[instr];
 }
 #endif /* LIBPOPS_EXTRA */
 

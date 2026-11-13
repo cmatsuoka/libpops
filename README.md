@@ -173,6 +173,8 @@ pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 65536);      /* Hihat decay, 1.0x (Q
 pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 5500);    /* Snare 1 band-pass, Hz */
 pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 5500);    /* Snare 2 band-pass, Hz */
 pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 10000);     /* Hihat band-pass, Hz */
+pops_set_instr_tune(ctx, POPS_INSTR_BASS, 131072);       /* Bass pitch, 2.0x (Q16 units) */
+pops_set_instr_tune(ctx, POPS_INSTR_COWBELL, 98304);     /* Cowbell pitch, 1.5x (Q16 units) */
 ```
 
 The accent gain applies to user-pattern columns that set the
@@ -181,14 +183,31 @@ takes effect on the notes triggered after it. The decay controls scale the
 factory decay time of the Snare 1, Snare 2 and Hihat; a note that is already
 sounding keeps playing and decays at the new rate. The cut-offs move the
 band-pass centre of the instrument, for all three of them. The Hihat also
-has a high-pass, which stays at its factory value of 1000 Hz: it removes
-the low end of the noise, and moving it above the band-pass would only dull
-the sound instead of opening it up.
+has a high-pass, which the cut-off does not move: its factory value of
+1000 Hz removes the low end of the noise, and opening a high-pass past
+the band-pass would only dull the sound instead of opening it up.
+
+The tuning multiplier transposes an instrument: 65536 is the factory
+pitch, 131072 is an octave up, 32768 is an octave down, and the setter
+clamps the range to 0.5..2.0. It scales what is pitched in the voice:
+the body oscillator of every instrument, the second tone of the Conga
+and the Cowbell as well, and, in the noise voices, the band-pass centre
+composed with the cut-off (the Cymbal and the Tambourine, which have no
+cut-off, use their factory band-pass) and the high-pass. The noise
+voices' high-passes follow the tuning so that the voice transposes
+whole: the Snare 1, Snare 2 and Hihat high-passes sit far below their
+band-passes and go along inaudibly, while the Cymbal and the Tambourine
+keep theirs at or above the factory band-pass and hold their character
+at every setting. The Guiro's ratchet and the Quijada's click clock are
+timing, not pitch, and stay at the factory rate. A note that is
+sounding follows the change, and a scaled centre or high-pass is
+limited to two fifths of the sample rate like the cut-offs are.
 None of them costs anything per sample: the accent is folded into the gain
 the mixer already applies to a voice, and the others only recompute
 coefficients between blocks.
 
-`pops_get_instr_decay()` and `pops_get_instr_cutoff()` read the values back.
+`pops_get_instr_decay()`, `pops_get_instr_cutoff()` and
+`pops_get_instr_tune()` read the values back.
 
 The cut-offs are also limited to two fifths of the sample rate, because a
 biquad is only stable below Nyquist. At 44100 Hz that limit is above

@@ -572,9 +572,10 @@ int32_t pops_get_instr_decay(const void *ctx, pops_instr instr);
  * Hihat over 2000..15000 Hz. The factory defaults are 5500 Hz for the
  * two snares and 10000 Hz for the Hihat.
  *
- * The Hihat also has a high-pass, which stays at its factory value of
- * 1000 Hz: it removes the low end of the noise, and moving it above
- * the band-pass would only dull the sound instead of opening it up.
+ * The Hihat also has a high-pass, which the cut-off does not move: its
+ * factory value is 1000 Hz, it removes the low end of the noise, and
+ * moving it above the band-pass would only dull the sound instead of
+ * opening it up.
  *
  * The filter is stable only below the sample rate's Nyquist
  * frequency, so the cut-off is also limited to two fifths of the
@@ -586,11 +587,43 @@ void pops_set_instr_cutoff(pops_context ctx, pops_instr instr, uint32_t freq_hz)
  *
  * The value is the one the library holds, after the clamp of
  * pops_set_instr_cutoff(). The sample-rate limit of the filter is not
- * part of it: it is applied when the filter coefficients are computed.
+ * part of it: it is applied when the filter coefficients are computed,
+ * together with the tuning multiplier of pops_set_instr_tune().
  *
  * Returns 0 when `ctx` is null, `instr` is out of range, or the
  * instrument has no cut-off. */
 uint32_t pops_get_instr_cutoff(const void *ctx, pops_instr instr);
+
+/* Set the tuning multiplier of an instrument.
+ *
+ * `instr` selects the instrument. Every instrument takes the tuning.
+ *
+ * The multiplier scales what is pitched in the voice: the body
+ * oscillator of the sine, dual-tone, Guiro and Quijada engines, the
+ * second tone of the dual-tone engine as well, and, in the noise
+ * engines, the band-pass center composed with the cut-off of
+ * pops_set_instr_cutoff() and the high-pass, which follows the
+ * multiplier alone so the voice transposes whole. The Guiro's ratchet
+ * rate and the Quijada's click clock are timing, not pitch, and stay
+ * at the factory rate.
+ *
+ * Values are Q16 units: 65536 is the factory pitch and the default,
+ * 32768 is an octave down and 131072 is an octave up. Clamped to
+ * 0.5..2.0.
+ *
+ * A note that is already sounding follows the change: the oscillators
+ * and the filter retune from the next sample, without cutting the note
+ * off. */
+void pops_set_instr_tune(pops_context ctx, pops_instr instr, int32_t tune_q16);
+
+/* Return the tuning multiplier of an instrument in Q16 units, where
+ * 65536 is 1.0 (the factory pitch).
+ *
+ * The value is the one the library holds, after the clamp of
+ * pops_set_instr_tune(), so it is what the voice actually plays.
+ *
+ * Returns 0 when `ctx` is null or `instr` is out of range. */
+int32_t pops_get_instr_tune(const void *ctx, pops_instr instr);
 #endif /* LIBPOPS_EXTRA */
 
 #ifdef __cplusplus

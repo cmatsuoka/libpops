@@ -73,7 +73,9 @@ static const struct mp7_voice_config voice_config[POPS_INSTR_COUNT] = {
  *
  * The cut-off is the band-pass center of the instrument, so the Hihat's
  * band-pass is the one that moves; its high-pass stays at the factory
- * value, and its band-pass cannot go below that high-pass. */
+ * value under the cut-off, and its band-pass cannot go below that
+ * high-pass. The high-pass does follow the tuning multiplier, so both
+ * noise filters scale together. */
 const struct mp7_instr_param mp7_instr_params[POPS_INSTR_COUNT] = {
     /* Bass */
     { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
@@ -274,6 +276,18 @@ static uint32_t scaled_decay_us(const struct mp7_voice_config *config,
     return (uint32_t)scaled;
 }
 
+/* The pitch of an instrument, scaled by its tuning multiplier.
+ *
+ * The multiplier is clamped to 0.5..2.0 by the setter, so the scaled
+ * value never overflows: the factory frequencies are uint16_t and twice
+ * their maximum fits comfortably in 32 bits. Rounding is half-up, like
+ * the decay scaling, and 1.0 is the exact identity. */
+static uint32_t scaled_pitch_hz(uint32_t freq_hz, int32_t tune_q16)
+{
+    return (uint32_t)(((int64_t)freq_hz * (int64_t)tune_q16 +
+                       (POPS_Q16_ONE / 2)) / POPS_Q16_ONE);
+}
+
 /* Apply the decay multiplier of an instrument to its envelopes.
  *
  * Every instrument that has a decay multiplier is a noise voice, whose
@@ -296,24 +310,37 @@ void mp7_voice_apply_decay(struct mp7_context_s *ctx, pops_instr instr)
     env_retime(&voice->aux_env, config->attack_us, decay_us, ctx->sample_rate);
 }
 
-/* Apply the cut-off of an instrument to its band-pass.
+/* The band-pass centre a noise voice is tuned to before the tuning
+ * multiplier: the stored cut-off of the three instruments that expose
+ * one, the factory value of the voice table for the Cymbal and the
+ * Tambourine, whose cut-off the user cannot set. */
+static uint32_t noise_cutoff_hz(const struct mp7_context_s *ctx,
+                                const struct mp7_voice_config *config,
+                                pops_instr instr)
+{
+    if (mp7_instr_params[instr].has_cutoff) {
+        return ctx->instr_cutoff_hz[mp7_instr_params[instr].slot];
+    }
+    return config->freq_hz;
+}
+
+/* Retune the band-pass of a noise voice.
  *
- * The cut-off is the band-pass center of every instrument that has one.
- * The Hihat's high-pass stays at the factory value, so the band-pass is
- * the only filter the cut-off moves. */
-void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, pops_instr instr)
+ * The effective centre is the stored cut-off scaled by the instrument's
+ * tuning multiplier, limited to the fraction of the sample rate a
+ * biquad is stable at. The coefficients are written without touching the
+ * filter state, so a sounding note follows the new centre without a
+ * discontinuity. */
+static void noise_bandpass_set(struct mp7_context_s *ctx, pops_instr instr)
 {
     struct mp7_voice *voice = &ctx->voices[instr];
     const struct mp7_voice_config *config = &voice_config[instr];
-    uint8_t slot = mp7_instr_params[instr].slot;
-    uint32_t limit = cutoff_limit_hz(ctx->sample_rate);
     uint32_t freq_hz;
+    uint32_t limit;
 
-    if (!mp7_instr_params[instr].has_cutoff) {
-        return;
-    }
-
-    freq_hz = ctx->instr_cutoff_hz[slot];
+    freq_hz = scaled_pitch_hz(noise_cutoff_hz(ctx, config, instr),
+                              ctx->instr_tune_q16[instr]);
+    limit = cutoff_limit_hz(ctx->sample_rate);
     if (freq_hz > limit) {
         freq_hz = limit;
     }
@@ -322,6 +349,92 @@ void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, pops_instr instr)
                                      freq_hz,
                                      config->res_q88,
                                      ctx->sample_rate);
+}
+
+/* Retune the high-pass of a noise voice.
+ *
+ * The high-pass is a property of the voice itself, not of the panel or
+ * of the extended parameters: the tuning multiplier moves it together
+ * with the band-pass, so the voice transposes whole and keeps its
+ * spectral shape at every setting. The factory high-passes of the
+ * Cymbal and the Tambourine sit at or above the factory band-pass, so a
+ * fixed high-pass would take the scaled band-pass below it and starve
+ * the voice of output as soon as it tuned down. The high-pass follows
+ * the same sample-rate limit the band-pass does. */
+static void noise_highpass_set(struct mp7_context_s *ctx, pops_instr instr)
+{
+    struct mp7_voice *voice = &ctx->voices[instr];
+    const struct mp7_voice_config *config = &voice_config[instr];
+    uint32_t freq_hz;
+    uint32_t limit;
+
+    freq_hz = scaled_pitch_hz(config->highpass_hz,
+                              ctx->instr_tune_q16[instr]);
+    limit = cutoff_limit_hz(ctx->sample_rate);
+    if (freq_hz > limit) {
+        freq_hz = limit;
+    }
+
+    pops_biquad_set_highpass_coeffs(&voice->highpass,
+                                    freq_hz,
+                                    ctx->sample_rate);
+}
+
+/* Apply the cut-off of an instrument to its band-pass.
+ *
+ * The cut-off is the band-pass center of every instrument that has one,
+ * and the band-pass is the only filter the cut-off moves: the noise
+ * high-pass follows the tuning multiplier alone, never the cut-off. The
+ * tuning multiplier composes with the cut-off, so the cut-off is the
+ * centre of the instrument at its factory pitch, not the centre the
+ * filter actually plays. */
+void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, pops_instr instr)
+{
+    if (!mp7_instr_params[instr].has_cutoff) {
+        return;
+    }
+
+    noise_bandpass_set(ctx, instr);
+}
+
+/* Apply the tuning multiplier of an instrument to its voice.
+ *
+ * The multiplier scales the pitched elements of the voice: the body
+ * oscillator of every pitched engine, the second tone of the dual-tone
+ * engine as well, and both filters of the noise engines - the band-pass
+ * centre, composed with the stored cut-off the way
+ * mp7_voice_apply_cutoff() is, and the high-pass, which follows the
+ * multiplier alone. The Guiro's ratchet and the Quijada's click clock
+ * are timing, not pitch, and stay at the factory rate.
+ *
+ * The oscillators and the filter coefficients are recomputed without
+ * resetting any envelope or filter state, so a sounding note follows the
+ * new pitch without a discontinuity. */
+void mp7_voice_apply_tune(struct mp7_context_s *ctx, pops_instr instr)
+{
+    struct mp7_voice *voice = &ctx->voices[instr];
+    const struct mp7_voice_config *config = &voice_config[instr];
+    int32_t tune_q16 = ctx->instr_tune_q16[instr];
+
+    pops_osc_set_freq(&voice->body_osc,
+                      scaled_pitch_hz(config->freq_hz, tune_q16),
+                      ctx->sample_rate);
+
+    switch (voice->engine) {
+    case MP7_ENGINE_DUAL_TONE:
+        pops_osc_set_freq(&voice->aux_osc,
+                          scaled_pitch_hz(config->freq2_hz, tune_q16),
+                          ctx->sample_rate);
+        break;
+
+    case MP7_ENGINE_NOISE:
+        noise_highpass_set(ctx, instr);
+        noise_bandpass_set(ctx, instr);
+        break;
+
+    default:
+        break;
+    }
 }
 #endif /* LIBPOPS_EXTRA */
 
@@ -349,6 +462,13 @@ void mp7_voice_init_all(struct mp7_context_s *ctx)
         if (mp7_instr_params[i].has_cutoff) {
             mp7_voice_apply_cutoff(ctx, (pops_instr)i);
         }
+    }
+
+    /* The tuning of every instrument. The loop covers the Cymbal and the
+     * Tambourine too, whose band-pass the cut-off setter cannot move, and
+     * it runs after the cut-off loop so the band-pass carries the tuning. */
+    for (i = 0; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+        mp7_voice_apply_tune(ctx, (pops_instr)i);
     }
 #endif
 }

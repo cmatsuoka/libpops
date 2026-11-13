@@ -1196,6 +1196,15 @@ static double biquad_pole_radius(const struct pops_biquad *filter)
     }
 }
 
+/* Two biquads with the same coefficients play the same filter, so a
+ * parameter change can be verified against a reference coefficient set. */
+static int biquad_coeffs_match(const struct pops_biquad *a,
+                               const struct pops_biquad *b)
+{
+    return (a->b0 == b->b0) && (a->b1 == b->b1) && (a->b2 == b->b2) &&
+           (a->a1 == b->a1) && (a->a2 == b->a2);
+}
+
 /* A user pattern with one instrument mask on every column of the cycle. */
 static void fill_user_pattern(struct pops_user_pattern *pattern,
                               uint16_t mask,
@@ -2048,6 +2057,211 @@ static int command_user(void)
             }
         }
 
+        /* The tuning multiplier scales what is pitched in the voice. */
+        mp7_init(ctx, sample_rate);
+        {
+            struct pops_osc osc;
+            unsigned int default_body;
+
+            pops_osc_set_freq(&osc, 65u, sample_rate);
+            default_body = ctx->voices[POPS_INSTR_BASS].body_osc.inc;
+            if (default_body != osc.inc) {
+                fail("the 1.0 tuning did not leave the Bass at its factory pitch");
+            }
+
+            pops_set_instr_tune(ctx, POPS_INSTR_BASS, 2 * POPS_Q16_ONE);
+            pops_osc_set_freq(&osc, 130u, sample_rate);
+            if (ctx->voices[POPS_INSTR_BASS].body_osc.inc != osc.inc) {
+                fail("the doubled tuning did not move the Bass an octave up");
+            }
+
+            pops_set_instr_tune(ctx, POPS_INSTR_BASS, POPS_Q16_ONE / 2);
+            pops_osc_set_freq(&osc, 33u, sample_rate);
+            if (ctx->voices[POPS_INSTR_BASS].body_osc.inc != osc.inc) {
+                fail("the halved tuning did not move the Bass an octave down");
+            }
+            if (pops_get_instr_tune(ctx, POPS_INSTR_BASS) != POPS_Q16_ONE / 2) {
+                fail("the tuning getter did not return the stored value");
+            }
+
+            pops_set_instr_tune(ctx, POPS_INSTR_BASS, 0);
+            if (pops_get_instr_tune(ctx, POPS_INSTR_BASS) != POPS_Q16_ONE / 2) {
+                fail("the tuning multiplier is not clamped to 0.5");
+            }
+            pops_set_instr_tune(ctx, POPS_INSTR_BASS, 4 * POPS_Q16_ONE);
+            if (pops_get_instr_tune(ctx, POPS_INSTR_BASS) != 2 * POPS_Q16_ONE) {
+                fail("the tuning multiplier is not clamped to 2.0");
+            }
+        }
+
+        /* The dual-tone voices move both oscillators. */
+        mp7_init(ctx, sample_rate);
+        {
+            struct pops_osc osc;
+
+            pops_set_instr_tune(ctx, POPS_INSTR_COWBELL, 2 * POPS_Q16_ONE);
+            pops_osc_set_freq(&osc, 1720u, sample_rate);
+            if (ctx->voices[POPS_INSTR_COWBELL].body_osc.inc != osc.inc) {
+                fail("the doubled tuning did not move the Cowbell's low tone");
+            }
+            pops_osc_set_freq(&osc, 9200u, sample_rate);
+            if (ctx->voices[POPS_INSTR_COWBELL].aux_osc.inc != osc.inc) {
+                fail("the doubled tuning did not move the Cowbell's high tone");
+            }
+
+            pops_set_instr_tune(ctx, POPS_INSTR_COWBELL, POPS_Q16_ONE / 2);
+            pops_osc_set_freq(&osc, 430u, sample_rate);
+            if (ctx->voices[POPS_INSTR_COWBELL].body_osc.inc != osc.inc) {
+                fail("the halved tuning did not move the Cowbell's low tone");
+            }
+            pops_osc_set_freq(&osc, 2300u, sample_rate);
+            if (ctx->voices[POPS_INSTR_COWBELL].aux_osc.inc != osc.inc) {
+                fail("the halved tuning did not move the Cowbell's high tone");
+            }
+        }
+
+        /* The Guiro's ratchet is timing, not pitch, and stays put. */
+        mp7_init(ctx, sample_rate);
+        {
+            struct pops_osc osc;
+            unsigned int default_rate = ctx->voices[POPS_INSTR_GUIRO].aux_osc.inc;
+
+            pops_set_instr_tune(ctx, POPS_INSTR_GUIRO, 2 * POPS_Q16_ONE);
+            pops_osc_set_freq(&osc, 8200u, sample_rate);
+            if (ctx->voices[POPS_INSTR_GUIRO].body_osc.inc != osc.inc) {
+                fail("the doubled tuning did not move the Guiro's body tone");
+            }
+            if (ctx->voices[POPS_INSTR_GUIRO].aux_osc.inc != default_rate) {
+                fail("the doubled tuning moved the Guiro's ratchet");
+            }
+        }
+
+        /* The noise voices have no oscillator: the tuning scales the
+         * band-pass centre, composed with the cut-off, and moves the
+         * high-pass with it. The 102, 512 and 154 resonances mirror the
+         * Snare 1, Hihat and Cymbal 1 rows of the voice table. */
+        mp7_init(ctx, sample_rate);
+        {
+            struct pops_biquad oracle;
+
+            pops_set_instr_tune(ctx, POPS_INSTR_SNARE_1, 2 * POPS_Q16_ONE);
+            pops_biquad_set_bandpass(&oracle, 11000u, 102u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_SNARE_1].bandpass,
+                                     &oracle)) {
+                fail("the doubled tuning did not move the Snare 1 band-pass up");
+            }
+
+            /* A later cut-off composes with the tuning: 5500 Hz at 2.0 is
+             * the centre 11000 Hz is at 1.0. */
+            pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 5500u);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_SNARE_1].bandpass,
+                                     &oracle)) {
+                fail("the cut-off did not compose with the tuning multiplier");
+            }
+
+            pops_set_instr_tune(ctx, POPS_INSTR_SNARE_1, POPS_Q16_ONE);
+            pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 11000u);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_SNARE_1].bandpass,
+                                     &oracle)) {
+                fail("a 1.0 tuning did not play the stored cut-off");
+            }
+
+            /* 20000 Hz is beyond two fifths of 44100 Hz, so the change is
+             * limited to 17640 Hz. */
+            pops_set_instr_tune(ctx, POPS_INSTR_HIHAT, 2 * POPS_Q16_ONE);
+            {
+                uint32_t limit = (uint32_t)(((uint64_t)sample_rate * 2u) / 5u);
+
+                pops_biquad_set_bandpass(&oracle, limit, 512u, sample_rate);
+                if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_HIHAT].bandpass,
+                                         &oracle)) {
+                    fail("the doubled Hihat tuning was not limited to the rate");
+                }
+            }
+
+            pops_set_instr_tune(ctx, POPS_INSTR_HIHAT, POPS_Q16_ONE / 2);
+            pops_biquad_set_bandpass(&oracle, 5000u, 512u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_HIHAT].bandpass,
+                                     &oracle)) {
+                fail("the halved tuning did not move the Hihat band-pass down");
+            }
+
+            /* The Cymbal has no cut-off parameter, but its factory
+             * band-pass still follows the tuning. */
+            pops_set_instr_tune(ctx, POPS_INSTR_CYMBAL_1, POPS_Q16_ONE / 2);
+            pops_biquad_set_bandpass(&oracle, 2800u, 154u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_CYMBAL_1].bandpass,
+                                     &oracle)) {
+                fail("the halved tuning did not move the Cymbal band-pass down");
+            }
+
+            /* The high-passes follow the tuning as well, so the whole
+             * voice transposes. Both the Cymbal and the Tambourine have
+             * a factory high-pass at or above the factory band-pass. */
+            pops_biquad_set_highpass_coeffs(&oracle, 2750u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_CYMBAL_1].highpass,
+                                     &oracle)) {
+                fail("the halved tuning did not move the Cymbal high-pass down");
+            }
+
+            /* The Tambourine's factory high-pass sits above its factory
+             * band-pass: a fixed high-pass would take the tuned-down
+             * band-pass below it and starve the voice of output. */
+            pops_set_instr_tune(ctx, POPS_INSTR_TAMBOURINE, POPS_Q16_ONE / 2);
+            pops_biquad_set_highpass_coeffs(&oracle, 3300u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_TAMBOURINE].highpass,
+                                     &oracle)) {
+                fail("the halved tuning did not move the Tambourine high-pass down");
+            }
+            pops_biquad_set_bandpass(&oracle, 2300u, 2560u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_TAMBOURINE].bandpass,
+                                     &oracle)) {
+                fail("the halved tuning did not move the Tambourine band-pass down");
+            }
+
+            /* Back at 1.0 the high-pass returns to its factory value. */
+            pops_set_instr_tune(ctx, POPS_INSTR_TAMBOURINE, POPS_Q16_ONE);
+            pops_biquad_set_highpass_coeffs(&oracle, 6600u, sample_rate);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_TAMBOURINE].highpass,
+                                     &oracle)) {
+                fail("the 1.0 tuning did not leave the Tambourine high-pass alone");
+            }
+        }
+
+        /* At 32000 Hz the doubled Tambourine high-pass (13200 Hz) runs
+         * into the stability limit and is clamped to two fifths of the
+         * rate, 12800 Hz. */
+        mp7_init(ctx, 32000u);
+        {
+            struct pops_biquad oracle;
+
+            pops_set_instr_tune(ctx, POPS_INSTR_TAMBOURINE, 2 * POPS_Q16_ONE);
+            pops_biquad_set_highpass_coeffs(&oracle, 12800u, 32000u);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_TAMBOURINE].highpass,
+                                     &oracle)) {
+                fail("the doubled Tambourine high-pass was not limited to the rate");
+            }
+            pops_biquad_set_bandpass(&oracle, 9200u, 2560u, 32000u);
+            if (!biquad_coeffs_match(&ctx->voices[POPS_INSTR_TAMBOURINE].bandpass,
+                                     &oracle)) {
+                fail("the doubled tuning did not move the Tambourine band-pass up");
+            }
+        }
+
+        /* A sample-rate change keeps the tuning and re-derives the
+         * increments for the new rate. */
+        mp7_init(ctx, sample_rate);
+        {
+            struct pops_osc osc;
+
+            pops_set_instr_tune(ctx, POPS_INSTR_BASS, 2 * POPS_Q16_ONE);
+            pops_set_sample_rate(ctx, 32000u);
+            pops_osc_set_freq(&osc, 130u, 32000u);
+            if (ctx->voices[POPS_INSTR_BASS].body_osc.inc != osc.inc) {
+                fail("a sample-rate change lost the tuning multiplier");
+            }
+        }
+
         /* The getters mirror the setters, and answer 0 for a null
          * context. */
         mp7_init(ctx, sample_rate);
@@ -2073,6 +2287,8 @@ static int command_user(void)
         pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 10000u);
         pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 10000u);
         pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 5000u);
+        pops_set_instr_tune(ctx, POPS_INSTR_BASS, 2 * POPS_Q16_ONE);
+        pops_set_instr_tune(ctx, POPS_INSTR_HIHAT, POPS_Q16_ONE / 2);
         pops_reset(ctx);
         if ((pops_get_accent_gain(ctx) != MP7_PATTERN_ACCENT_GAIN_Q16) ||
             (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != POPS_Q16_ONE) ||
@@ -2080,7 +2296,9 @@ static int command_user(void)
             (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != POPS_Q16_ONE) ||
             (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_1) != MP7_SNARE1_BANDPASS_HZ) ||
             (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_2) != MP7_SNARE2_BANDPASS_HZ) ||
-            (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ)) {
+            (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ) ||
+            (pops_get_instr_tune(ctx, POPS_INSTR_BASS) != POPS_Q16_ONE) ||
+            (pops_get_instr_tune(ctx, POPS_INSTR_HIHAT) != POPS_Q16_ONE)) {
             fail("pops_reset() did not restore the extended synthesis defaults");
         } else {
             ok("pops_reset() restores the extended synthesis defaults");
@@ -2094,6 +2312,10 @@ static int command_user(void)
         pops_set_instr_cutoff(0, POPS_INSTR_SNARE_1, 1000u);
         pops_set_instr_cutoff(0, POPS_INSTR_SNARE_2, 1000u);
         pops_set_instr_cutoff(0, POPS_INSTR_HIHAT, 1000u);
+        pops_set_instr_tune(0, POPS_INSTR_BASS, POPS_Q16_ONE);
+        if (pops_get_instr_tune(0, POPS_INSTR_BASS) != 0) {
+            fail("the tuning getter did not return 0 for a null context");
+        }
         ok("the extended synthesis setters ignore a null context");
 
         if ((unsigned int)failures == failures_before) {
@@ -2142,6 +2364,45 @@ static int command_user(void)
         free(live);
     }
 
+    /* A tuning change must not cut off a note that is already sounding:
+     * the note follows the new pitch from the next sample. */
+    {
+        struct mp7_context_s *live = context_new();
+        struct mp7_voice *bass = &live->voices[POPS_INSTR_BASS];
+        unsigned int i;
+        int still_playing = 1;
+
+        mp7_init(live, 44100);
+        mp7_voice_trigger(bass);
+        for (i = 0u; i < 2000u; i++) {
+            mp7_voice_process(bass);
+        }
+
+        if (bass->amp_env.stage != POPS_ENV_DECAY) {
+            fail("the Bass note did not reach its decay stage");
+            still_playing = 0;
+        }
+
+        pops_set_instr_tune(live, POPS_INSTR_BASS, 2 * POPS_Q16_ONE);
+
+        if (still_playing) {
+            if (!bass->active) {
+                fail("a tuning change deactivated the Bass voice");
+                still_playing = 0;
+            } else if (bass->amp_env.stage != POPS_ENV_DECAY) {
+                fail("a tuning change reset the Bass envelope");
+                still_playing = 0;
+            } else if (mp7_voice_process(bass) == 0) {
+                fail("a tuning change silenced the Bass note");
+                still_playing = 0;
+            } else {
+                ok("a tuning change does not cut off a sounding note");
+            }
+        }
+
+        free(live);
+    }
+
     /* The cut-offs must stay below the sample rate's Nyquist frequency at
      * any rate, or the biquad becomes unstable and the voice buzzes. */
     {
@@ -2158,6 +2419,8 @@ static int command_user(void)
             pops_set_instr_cutoff(low, POPS_INSTR_SNARE_1, 15000u);
             pops_set_instr_cutoff(low, POPS_INSTR_SNARE_2, 15000u);
             pops_set_instr_cutoff(low, POPS_INSTR_HIHAT, 15000u);
+            pops_set_instr_tune(low, POPS_INSTR_SNARE_1, 2 * POPS_Q16_ONE);
+            pops_set_instr_tune(low, POPS_INSTR_HIHAT, 2 * POPS_Q16_ONE);
 
             /* The cut-off moves the band-pass of all three instruments;
              * the Hihat's high-pass stays at its factory value. */
