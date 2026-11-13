@@ -3,7 +3,7 @@
  *
  * The sine table stores only the first quadrant, as a file-scope `const`
  * array in flash. The full period is rebuilt once, on the first
- * mp7_create_context(), into a table shared by every context, every voice and
+ * pops_create_context(), into a table shared by every context, every voice and
  * every future variant of the library; no context carries a copy.
  *
  * The stored values are exact: every entry equals
@@ -17,14 +17,14 @@
  *
  * Regenerate the table with: python3 tools/gen_sine_table.py
  *
- * This file belongs to the shared layer: the symbols are named poppy_*.
+ * This file belongs to the shared layer: the symbols are named pops_*.
  */
 
 #include <stdlib.h>
 
 #include "mp7_internal.h"
 
-const int16_t poppy_sine_quad1[POPPY_SINE_QUAD_SIZE] = {
+const int16_t pops_sine_quad1[POPS_SINE_QUAD_SIZE] = {
          0,    201,    402,    603,    804,   1005,   1206,   1407,
       1608,   1809,   2009,   2210,   2410,   2611,   2811,   3012,
       3212,   3412,   3612,   3811,   4011,   4210,   4410,   4609,
@@ -60,23 +60,23 @@ const int16_t poppy_sine_quad1[POPPY_SINE_QUAD_SIZE] = {
      32767,
 };
 
-int16_t *poppy_sine = 0;
+int16_t *pops_sine = 0;
 
 static void rebuild_sine(int16_t *table)
 {
     unsigned int i;
 
     for (i = 0u; i <= 256u; i++) {
-        table[i] = poppy_sine_quad1[i];
+        table[i] = pops_sine_quad1[i];
     }
     for (i = 257u; i <= 511u; i++) {
-        table[i] = poppy_sine_quad1[512u - i];
+        table[i] = pops_sine_quad1[512u - i];
     }
     for (i = 512u; i <= 767u; i++) {
-        table[i] = (int16_t)-poppy_sine_quad1[i - 512u];
+        table[i] = (int16_t)-pops_sine_quad1[i - 512u];
     }
-    for (i = 768u; i < POPPY_SINE_TABLE_SIZE; i++) {
-        table[i] = (int16_t)-poppy_sine_quad1[1024u - i];
+    for (i = 768u; i < POPS_SINE_TABLE_SIZE; i++) {
+        table[i] = (int16_t)-pops_sine_quad1[1024u - i];
     }
 }
 
@@ -84,18 +84,18 @@ static void rebuild_sine(int16_t *table)
  * ten bits select the entry and the low 18 bits are the fraction. The table
  * holds Q15 values, so the interpolation runs in 64 bits and rounds back to
  * Q15; the result always fits int16_t. */
-int16_t poppy_sine_interp(uint32_t phase)
+int16_t pops_sine_interp(uint32_t phase)
 {
     uint32_t index = (phase >> 18) & 0x3FFu;
     uint32_t frac = phase & 0x3FFFFu;
-    int32_t a = poppy_sine_at(index);
-    int32_t b = poppy_sine_at((index + 1u) & 0x3FFu);
+    int32_t a = pops_sine_at(index);
+    int32_t b = pops_sine_at((index + 1u) & 0x3FFu);
     int64_t v = (int64_t)a * 262144 + (int64_t)(b - a) * (int64_t)frac;
 
     return (int16_t)((v + (1 << 17)) >> 18);
 }
 
-void poppy_sine_init(void)
+void pops_sine_init(void)
 {
     static int initialized = 0;
     int16_t *table;
@@ -105,7 +105,7 @@ void poppy_sine_init(void)
     }
     initialized = 1;
 
-    table = (int16_t *)malloc((size_t)POPPY_SINE_TABLE_SIZE * sizeof(int16_t));
+    table = (int16_t *)malloc((size_t)POPS_SINE_TABLE_SIZE * sizeof(int16_t));
     if (table == 0) {
         /* The quadrant in flash is bit-exact with the full table, so the
          * lookups fall back to it and the library still works. */
@@ -116,13 +116,13 @@ void poppy_sine_init(void)
      * creates a context while this one is building must not find a
      * half-written table. */
     rebuild_sine(table);
-    poppy_sine = table;
+    pops_sine = table;
 }
 
 /* Soft-clip transfer curve. Entry i corresponds to u = -1 + 2*i/255 and
  * stores softclip(3*u) / 10 in Q31. The engine multiplies by 10 after the
  * lookup to restore the +/-10 saturation range. */
-const int32_t poppy_softclip[POPPY_SOFTCLIP_TABLE_SIZE] = {
+const int32_t pops_softclip[POPS_SOFTCLIP_TABLE_SIZE] = {
     -2147483647, -2147483385, -2147481525, -2147476401,
     -2147466264, -2147449288, -2147423556, -2147387067,
     -2147337724, -2147273337, -2147191614, -2147090162,
@@ -193,7 +193,7 @@ const int32_t poppy_softclip[POPPY_SOFTCLIP_TABLE_SIZE] = {
  * Factory rhythm data.
  *
  * A column is a 16-bit instrument mask: bit n is set when instrument
- * n (mp7_instr order) plays in that column, so bit 0 is the Base and
+ * n (pops_instr order) plays in that column, so bit 0 is the Base and
  * bit 14 the Quijada. Every array is const flash data.
  *
  * The Tambourine, Guiro and Quijada hits are identical in every rhythm, so
@@ -507,26 +507,26 @@ static const uint16_t mp7_pattern_latinswing_notes[MP7_PATTERN_HALF_STEPS] = {
     0x0821, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0820, 0x0000,
 };
 
-const struct mp7_factory_rhythm mp7_factory_rhythms[MP7_RHYTHM_COUNT] = {
-    { mp7_pattern_waltz_notes, MP7_ENABLE_3_4, 32, MP7_TIMESIG_3_4 }, /* Waltz */
-    { mp7_pattern_samba_notes, MP7_ENABLE_4_4, 64, MP7_TIMESIG_4_4 }, /* Samba */
-    { mp7_pattern_mambo_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Mambo */
-    { mp7_pattern_rumba_notes, MP7_ENABLE_4_4, 64, MP7_TIMESIG_4_4 }, /* Rumba */
-    { mp7_pattern_tango_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Tango */
-    { mp7_pattern_bossanova_notes, MP7_ENABLE_4_4, 64, MP7_TIMESIG_4_4 }, /* Bossanova */
-    { mp7_pattern_rock1_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Rock 1 */
-    { mp7_pattern_rock3_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Rock 3 */
-    { mp7_pattern_march24_notes, MP7_ENABLE_2_4, MP7_PATTERN_QUARTER_STEPS, MP7_TIMESIG_2_4 }, /* March 2/4 */
-    { mp7_pattern_swing_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Swing */
-    { mp7_pattern_jazzwaltz_notes, MP7_ENABLE_3_4, 32, MP7_TIMESIG_3_4 }, /* Jazz Waltz */
-    { mp7_pattern_meringue_notes, MP7_ENABLE_4_4, 64, MP7_TIMESIG_4_4 }, /* Meringue */
-    { mp7_pattern_chacha_notes, MP7_ENABLE_4_4, 64, MP7_TIMESIG_4_4 }, /* Cha-Cha */
-    { mp7_pattern_beguine_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Beguine */
-    { mp7_pattern_habanera_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Habanera */
-    { mp7_pattern_slowrock_notes, MP7_ENABLE_2_4, MP7_PATTERN_QUARTER_STEPS, MP7_TIMESIG_2_4 }, /* Slow Rock */
-    { mp7_pattern_rock2_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Rock 2 */
-    { mp7_pattern_rock4_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Rock 4 */
-    { mp7_pattern_march68_notes, MP7_ENABLE_2_4, MP7_PATTERN_QUARTER_STEPS, MP7_TIMESIG_6_8T }, /* March 6/8 */
-    { mp7_pattern_latinswing_notes, MP7_ENABLE_4_4, 32, MP7_TIMESIG_4_4 }, /* Latin Swing */
+const struct mp7_factory_rhythm mp7_factory_rhythms[POPS_RHYTHM_COUNT] = {
+    { mp7_pattern_waltz_notes, MP7_ENABLE_3_4, 32, POPS_TIMESIG_3_4 }, /* Waltz */
+    { mp7_pattern_samba_notes, MP7_ENABLE_4_4, 64, POPS_TIMESIG_4_4 }, /* Samba */
+    { mp7_pattern_mambo_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Mambo */
+    { mp7_pattern_rumba_notes, MP7_ENABLE_4_4, 64, POPS_TIMESIG_4_4 }, /* Rumba */
+    { mp7_pattern_tango_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Tango */
+    { mp7_pattern_bossanova_notes, MP7_ENABLE_4_4, 64, POPS_TIMESIG_4_4 }, /* Bossanova */
+    { mp7_pattern_rock1_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Rock 1 */
+    { mp7_pattern_rock3_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Rock 3 */
+    { mp7_pattern_march24_notes, MP7_ENABLE_2_4, MP7_PATTERN_QUARTER_STEPS, POPS_TIMESIG_2_4 }, /* March 2/4 */
+    { mp7_pattern_swing_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Swing */
+    { mp7_pattern_jazzwaltz_notes, MP7_ENABLE_3_4, 32, POPS_TIMESIG_3_4 }, /* Jazz Waltz */
+    { mp7_pattern_meringue_notes, MP7_ENABLE_4_4, 64, POPS_TIMESIG_4_4 }, /* Meringue */
+    { mp7_pattern_chacha_notes, MP7_ENABLE_4_4, 64, POPS_TIMESIG_4_4 }, /* Cha-Cha */
+    { mp7_pattern_beguine_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Beguine */
+    { mp7_pattern_habanera_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Habanera */
+    { mp7_pattern_slowrock_notes, MP7_ENABLE_2_4, MP7_PATTERN_QUARTER_STEPS, POPS_TIMESIG_2_4 }, /* Slow Rock */
+    { mp7_pattern_rock2_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Rock 2 */
+    { mp7_pattern_rock4_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Rock 4 */
+    { mp7_pattern_march68_notes, MP7_ENABLE_2_4, MP7_PATTERN_QUARTER_STEPS, POPS_TIMESIG_6_8T }, /* March 6/8 */
+    { mp7_pattern_latinswing_notes, MP7_ENABLE_4_4, 32, POPS_TIMESIG_4_4 }, /* Latin Swing */
 };
 

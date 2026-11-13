@@ -6,7 +6,7 @@
  *   1. The shared layer (fixed-point helpers, the sine table and its builder,
  *      the PRNG, the biquads, the soft-clip LUT, the mixer core). These must
  *      stay free of the mp7_ prefix so a future variant can link them; they
- *      are named poppy_*.
+ *      are named pops_*.
  *   2. The per-variant state of this instrument: the context and the tables
  *      that describe its voices and rhythms.
  *
@@ -19,35 +19,35 @@
 
 #include <stdint.h>
 
-#include "mp7.h"
+#include "pops.h"
 #include "mp7_fixed.h"
 
-/* The reverb is optional. Define LIBPOPPY_FX_REVERB when building the
+/* The reverb is optional. Define LIBPOPS_FX_REVERB when building the
  * library to compile the send bus and its delay memory. Without it the bus
  * is bypassed at compile time: no delay memory is allocated and the render
  * loop carries no reverb code. The control API stays available in either
  * build, so a host needs no conditional compilation. */
-#if defined(LIBPOPPY_FX_REVERB)
+#if defined(LIBPOPS_FX_REVERB)
 #define MP7_FX_REVERB 1
 #else
 #define MP7_FX_REVERB 0
 #endif
 
 /* Number of comb and allpass lines in each channel of the reverb. */
-#define POPPY_REVERB_COMBS 8
-#define POPPY_REVERB_ALLPASSES 4
+#define POPS_REVERB_COMBS 8
+#define POPS_REVERB_ALLPASSES 4
 
-/* Fixed reverb parameters, in Q16 units (1.0 is POPPY_Q16_ONE).
+/* Fixed reverb parameters, in Q16 units (1.0 is POPS_Q16_ONE).
  *
  * They are compile-time values, not run-time controls: the room size is the
  * middle of the range, the wet return is 50% so the effective reverb level of
  * an instrument stays under its send level, the damping is 10% and the width
  * is 70%. Override any of them with -D at build time to retune the reverb. */
 #ifndef MP7_FX_ROOM_SIZE_Q16
-#define MP7_FX_ROOM_SIZE_Q16 (POPPY_Q16_ONE / 2)
+#define MP7_FX_ROOM_SIZE_Q16 (POPS_Q16_ONE / 2)
 #endif
 #ifndef MP7_FX_LEVEL_Q16
-#define MP7_FX_LEVEL_Q16 (POPPY_Q16_ONE / 2)
+#define MP7_FX_LEVEL_Q16 (POPS_Q16_ONE / 2)
 #endif
 #ifndef MP7_FX_DAMPING_Q16
 #define MP7_FX_DAMPING_Q16 6554 /* 0.10 */
@@ -59,22 +59,22 @@
 /* Full sine period, one entry per sample of a 1024-step cycle. The
  * oscillator and the filter coefficient setup interpolate between entries,
  * so this is the stored resolution only, not the output resolution. */
-#define POPPY_SINE_TABLE_SIZE 1024
+#define POPS_SINE_TABLE_SIZE 1024
 
 /* First quadrant including both endpoints, i.e. the zero crossing at index 0
  * and the peak at index 256. The other quadrants are mirrored and negated
  * from this table. */
-#define POPPY_SINE_QUAD_SIZE 257
+#define POPS_SINE_QUAD_SIZE 257
 
 /* Number of points in the soft-clip transfer table. */
-#define POPPY_SOFTCLIP_TABLE_SIZE 256
+#define POPS_SOFTCLIP_TABLE_SIZE 256
 
 /* A factory rhythm is a note grid plus a step-enable mask. The enable mask
  * is a 64-bit word, one bit per column; columns that are disabled in the
  * combined mask take no time at all.
  *
  * A column of the note grid is a 16-bit instrument mask: bit n is set when
- * instrument n (mp7_instr order) plays in that column, so bit 0 is the Bass
+ * instrument n (pops_instr order) plays in that column, so bit 0 is the Bass
  * Drum and bit 14 the Quijada. A rhythm's own grid holds the twelve rhythm
  * instruments (bits 0..11). The Tambourine, Guiro and Quijada hits are the
  * same in every rhythm and are a separate definition of their own,
@@ -90,7 +90,7 @@
 
 /* The public column count is the cycle length: a view always carries the
  * whole cycle, and the stored period is repeated out to it. */
-#if MP7_PATTERN_COLUMNS != MP7_PATTERN_STEPS
+#if POPS_PATTERN_COLUMNS != MP7_PATTERN_STEPS
 #error "the public pattern column count must match the cycle length"
 #endif
 
@@ -100,7 +100,7 @@
  * cannot tell them apart.
  *
  * It is the mask of the 2/4 and the 6/8 signature, and the library hands it
- * out through mp7_timesig_enable_mask(). */
+ * out through pops_timesig_enable_mask(). */
 #define MP7_PATTERN_COMPOUND_MASK UINT64_C(0x3F3F3F3F3F3F3F3F)
 
 /* The step-enable masks of the time signatures.
@@ -144,9 +144,9 @@ static inline uint8_t mp7_mask_is_compound(uint64_t enable)
 /* The fixed Tambourine/Guiro/Quijada layer. It is present in every factory
  * rhythm and keeps playing when no rhythm key is pressed. */
 #define MP7_PATTERN_PERCUSSION_MASK \
-    ((uint16_t)((((uint32_t)1u << MP7_INSTR_TAMBOURINE) | \
-                 ((uint32_t)1u << MP7_INSTR_GUIRO) | \
-                 ((uint32_t)1u << MP7_INSTR_QUIJADA))))
+    ((uint16_t)((((uint32_t)1u << POPS_INSTR_TAMBOURINE) | \
+                 ((uint32_t)1u << POPS_INSTR_GUIRO) | \
+                 ((uint32_t)1u << POPS_INSTR_QUIJADA))))
 
 /* The instruments a rhythm's own grid may use: everything below the
  * Tambourine, which is the first of the shared percussion voices. */
@@ -164,10 +164,10 @@ struct mp7_factory_rhythm {
     const uint16_t *notes; /* notes_period columns, bit n = instrument n plays */
     uint64_t enable;        /* bit c = column c is enabled */
     uint8_t notes_period;   /* columns in notes: 16, 32 or 64 */
-    mp7_timesig timesig;    /* the meter the rhythm is named after */
+    pops_timesig timesig;    /* the meter the rhythm is named after */
 };
 
-extern const struct mp7_factory_rhythm mp7_factory_rhythms[MP7_RHYTHM_COUNT];
+extern const struct mp7_factory_rhythm mp7_factory_rhythms[POPS_RHYTHM_COUNT];
 extern const uint16_t mp7_shared_percussion_notes[MP7_PATTERN_HALF_STEPS];
 
 /* Which set of patterns the sequencer plays. The field exists in every
@@ -176,11 +176,11 @@ extern const uint16_t mp7_shared_percussion_notes[MP7_PATTERN_HALF_STEPS];
 #define MP7_SOURCE_PRESET 0u
 #define MP7_SOURCE_USER 1u
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
 
 /* The user slots are addressed the way the factory rhythms are, so the two
  * sets have the same size. */
-#if MP7_USER_PATTERN_COUNT != 20
+#if POPS_USER_PATTERN_COUNT != 20
 #error "the user pattern slots must match the 20 factory rhythms"
 #endif
 
@@ -196,17 +196,17 @@ extern const uint16_t mp7_shared_percussion_notes[MP7_PATTERN_HALF_STEPS];
  * cannot hold a mask the hardware does not have. */
 struct mp7_user_slot {
     uint16_t notes[MP7_PATTERN_STEPS];
-    uint8_t timesig;      /* mp7_timesig of the pattern */
+    uint8_t timesig;      /* pops_timesig of the pattern */
     uint8_t used;
 };
 
 /* Accent processing is part of the extended build only. The 16th bit of a
  * user pattern column is the accent flag; the lower 15 bits are instruments. */
-#define MP7_PATTERN_INSTRUMENT_MASK ((uint16_t)((1u << MP7_INSTR_COUNT) - 1u))
-#define MP7_PATTERN_ACCENT_BIT      ((uint16_t)(1u << MP7_INSTR_COUNT))
-#define MP7_PATTERN_ACCENT_GAIN_Q16 ((int32_t)((6 * POPPY_Q16_ONE) / 5))
+#define MP7_PATTERN_INSTRUMENT_MASK ((uint16_t)((1u << POPS_INSTR_COUNT) - 1u))
+#define MP7_PATTERN_ACCENT_BIT      ((uint16_t)(1u << POPS_INSTR_COUNT))
+#define MP7_PATTERN_ACCENT_GAIN_Q16 ((int32_t)((6 * POPS_Q16_ONE) / 5))
 
-#endif /* LIBPOPPY_EXTRA */
+#endif /* LIBPOPS_EXTRA */
 
 /* The factory cut-offs the extended build exposes as run-time parameters.
  *
@@ -220,7 +220,7 @@ struct mp7_user_slot {
 #define MP7_HIHAT_BANDPASS_HZ  10000u
 #define MP7_HIHAT_HIGHPASS_HZ  1000u
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
 
 /* The cut-off range the extended build exposes, in Hz.
  *
@@ -233,9 +233,9 @@ struct mp7_user_slot {
 #define MP7_CUTOFF_MAX_HZ       15000u
 #define MP7_HIHAT_CUTOFF_MIN_HZ 2000u
 
-/* The decay multiplier range, in Q16 units (1.0 is POPPY_Q16_ONE). */
-#define MP7_DECAY_MIN_Q16 (POPPY_Q16_ONE / 4)
-#define MP7_DECAY_MAX_Q16 (4 * POPPY_Q16_ONE)
+/* The decay multiplier range, in Q16 units (1.0 is POPS_Q16_ONE). */
+#define MP7_DECAY_MIN_Q16 (POPS_Q16_ONE / 4)
+#define MP7_DECAY_MAX_Q16 (4 * POPS_Q16_ONE)
 
 /* What the extended build exposes for one instrument.
  *
@@ -268,7 +268,7 @@ struct mp7_instr_param {
  * the length of the two parameter arrays in the context. */
 #define MP7_PARAM_COUNT 3u
 
-extern const struct mp7_instr_param mp7_instr_params[MP7_INSTR_COUNT];
+extern const struct mp7_instr_param mp7_instr_params[POPS_INSTR_COUNT];
 
 /* The effective cut-off is also limited by the sample rate.
  *
@@ -281,51 +281,51 @@ extern const struct mp7_instr_param mp7_instr_params[MP7_INSTR_COUNT];
 #define MP7_CUTOFF_RATE_NUM 2u
 #define MP7_CUTOFF_RATE_DEN 5u
 
-#endif /* LIBPOPPY_EXTRA */
+#endif /* LIBPOPS_EXTRA */
 
 /* First quadrant of the sine, Q15, for i = 0..256. This is the only sine
  * data in the image, and it is shared by every context, every voice and every
  * future variant of the library. */
-extern const int16_t poppy_sine_quad1[POPPY_SINE_QUAD_SIZE];
+extern const int16_t pops_sine_quad1[POPS_SINE_QUAD_SIZE];
 
-/* The full 1024-entry period, allocated and rebuilt from poppy_sine_quad1
+/* The full 1024-entry period, allocated and rebuilt from pops_sine_quad1
  * the first time a context is created. NULL until then (and if that
  * allocation fails, in which case lookups fall back to the quadrant, which
  * is bit-exact with the full table). The pointer is published only after the
  * table is complete, so a lookup never sees a half-written table. */
-extern int16_t *poppy_sine;
+extern int16_t *pops_sine;
 
 /* Allocate and rebuild the full sine period. Idempotent and meant to be
  * called once, before any voice runs; the table lives for the process. */
-void poppy_sine_init(void);
+void pops_sine_init(void);
 
-/* Q15 sine of 2*pi*i/POPPY_SINE_TABLE_SIZE at a whole table index, using the
+/* Q15 sine of 2*pi*i/POPS_SINE_TABLE_SIZE at a whole table index, using the
  * rebuilt table when it is available and the flash-resident quadrant
  * otherwise. */
-static inline int16_t poppy_sine_at(uint32_t index)
+static inline int16_t pops_sine_at(uint32_t index)
 {
     index &= 0x3FFu;
 
-    if (poppy_sine != 0) {
-        return poppy_sine[index];
+    if (pops_sine != 0) {
+        return pops_sine[index];
     }
     if (index <= 256u) {
-        return poppy_sine_quad1[index];
+        return pops_sine_quad1[index];
     }
     if (index <= 511u) {
-        return poppy_sine_quad1[512u - index];
+        return pops_sine_quad1[512u - index];
     }
     if (index <= 767u) {
-        return (int16_t)-poppy_sine_quad1[index - 512u];
+        return (int16_t)-pops_sine_quad1[index - 512u];
     }
-    return (int16_t)-poppy_sine_quad1[1024u - index];
+    return (int16_t)-pops_sine_quad1[1024u - index];
 }
 
 /* Q15 sine of a 28-bit phase (one full cycle is 2^28), linearly interpolated
  * between adjacent table entries. The interpolation error is below one Q15
  * LSB for the stored 1024-step table, and the full 28-bit phase keeps the
  * oscillator's phase resolution far finer than the old whole-index lookup. */
-int16_t poppy_sine_interp(uint32_t phase);
+int16_t pops_sine_interp(uint32_t phase);
 
 /* Soft-clip curve over x in [-3, 3], indexed through u = x/3 in [-1, 1].
  *
@@ -333,18 +333,18 @@ int16_t poppy_sine_interp(uint32_t phase);
  * engine, which multiplies this table's result by 10 to recover the +/-10
  * saturation range.
  * Q31 would overflow at 10, so the caller accumulates in int64_t. */
-extern const int32_t poppy_softclip[POPPY_SOFTCLIP_TABLE_SIZE];
+extern const int32_t pops_softclip[POPS_SOFTCLIP_TABLE_SIZE];
 
 /* Envelope stages. HOLD is used by the gated Guiro amplitude envelope. */
-enum poppy_env_stage {
-    POPPY_ENV_IDLE = 0,
-    POPPY_ENV_ATTACK,
-    POPPY_ENV_DECAY,
-    POPPY_ENV_HOLD,
-    POPPY_ENV_RELEASE
+enum pops_env_stage {
+    POPS_ENV_IDLE = 0,
+    POPS_ENV_ATTACK,
+    POPS_ENV_DECAY,
+    POPS_ENV_HOLD,
+    POPS_ENV_RELEASE
 };
 
-struct poppy_env {
+struct pops_env {
     int32_t value;          /* Q30, clamped to [0, 1] on output */
     int32_t target;         /* Q30 */
     int32_t coef;           /* Q30 */
@@ -354,13 +354,13 @@ struct poppy_env {
     uint8_t attack_to_hold;
 };
 
-struct poppy_osc {
+struct pops_osc {
     uint32_t phase;         /* 28-bit accumulator */
     uint32_t inc;
 };
 
 /* Direct-form I biquad. Coefficients are Q30; state and output are Q31. */
-struct poppy_biquad {
+struct pops_biquad {
     int32_t b0;
     int32_t b1;
     int32_t b2;
@@ -374,14 +374,14 @@ struct poppy_biquad {
 
 #if MP7_FX_REVERB
 /* One reverb comb line. The delay line lives inside the single FX block. */
-struct poppy_reverb_comb {
+struct pops_reverb_comb {
     int16_t *line;   /* into reverb.block */
     uint32_t alloc;  /* allocated length in samples (fixed at 48 kHz) */
     uint32_t pos;    /* write position, wraps at alloc */
     int32_t lp;      /* damping one-pole state, Q31 */
 };
 
-struct poppy_reverb_allpass {
+struct pops_reverb_allpass {
     int16_t *line;
     uint32_t alloc;
     uint32_t pos;
@@ -393,13 +393,13 @@ struct poppy_reverb_allpass {
  * The delay memory is a single block sized once for 48 kHz. The active line
  * lengths follow the sample rate and the room size, so the bus never
  * allocates after context creation. */
-struct poppy_reverb {
+struct pops_reverb {
     int16_t *block;         /* one allocation, carved into the lines */
     size_t block_size;      /* bytes, for teardown */
-    struct poppy_reverb_comb comb[2][POPPY_REVERB_COMBS];
-    struct poppy_reverb_allpass allpass[2][POPPY_REVERB_ALLPASSES];
-    uint32_t comb_len[POPPY_REVERB_COMBS];      /* active lengths, samples */
-    uint32_t allpass_len[POPPY_REVERB_ALLPASSES];
+    struct pops_reverb_comb comb[2][POPS_REVERB_COMBS];
+    struct pops_reverb_allpass allpass[2][POPS_REVERB_ALLPASSES];
+    uint32_t comb_len[POPS_REVERB_COMBS];      /* active lengths, samples */
+    uint32_t allpass_len[POPS_REVERB_ALLPASSES];
 
     int32_t damp_q16;       /* damping one-pole coefficient */
     int32_t width_q31;      /* stereo width, Q31 */
@@ -421,48 +421,48 @@ enum mp7_engine {
  * Quijada default to 0.5 (their panel Additional Volume faders) and the
  * remaining instruments default to 1.0. The instrument pans default to center
  * and are the source of the per-voice pan positions. */
-struct poppy_mixer {
+struct pops_mixer {
     int32_t panel_volume_q16; /* the panel Volume, 0..4; the mixer applies 0.5x */
     int32_t balance_q16;
     int32_t balance_a_gain_q16; /* cached, recomputed on a Balance change */
     int32_t balance_b_gain_q16;
-    int32_t instr_gain_q16[MP7_INSTR_COUNT]; /* 0..2, 1.0 = the reference level */
-    int32_t instr_pan_q16[MP7_INSTR_COUNT]; /* 0 = hard left, 65536 = hard right */
+    int32_t instr_gain_q16[POPS_INSTR_COUNT]; /* 0..2, 1.0 = the reference level */
+    int32_t instr_pan_q16[POPS_INSTR_COUNT]; /* 0 = hard left, 65536 = hard right */
 };
 
 /* Balance touches exactly two groups: Bass Drum against Hihat/Cymbal 1/Cymbal 2.
  * The group tags are neutral because the mixer core is shared. */
-enum poppy_mix_group {
-    POPPY_MIX_GROUP_NONE = 0,
-    POPPY_MIX_GROUP_A,
-    POPPY_MIX_GROUP_B
+enum pops_mix_group {
+    POPS_MIX_GROUP_NONE = 0,
+    POPS_MIX_GROUP_A,
+    POPS_MIX_GROUP_B
 };
 
 /* One voice. The union is not used; the engines share the named fields so the
  * dispatch stays readable, at the cost of a few unused bytes per voice. */
 struct mp7_voice {
-    mp7_instr instr;
+    pops_instr instr;
     uint8_t engine;
     uint8_t active;
 
-    struct poppy_osc body_osc;
-    struct poppy_osc aux_osc;
+    struct pops_osc body_osc;
+    struct pops_osc aux_osc;
 
-    struct poppy_env amp_env;
-    struct poppy_env body_env;
-    struct poppy_env aux_env;
-    struct poppy_env short_env;
-    struct poppy_env long_env;
+    struct pops_env amp_env;
+    struct pops_env body_env;
+    struct pops_env aux_env;
+    struct pops_env short_env;
+    struct pops_env long_env;
 
-    struct poppy_biquad highpass;
-    struct poppy_biquad bandpass;
+    struct pops_biquad highpass;
+    struct pops_biquad bandpass;
 
     int32_t tick_q30;       /* noise tone depth, from the fixed Tick value */
     int32_t level2_q16;     /* dual-tone second-oscillator level, Q16 (65536 = 1.0) */
     int32_t level_q16;      /* fixed per-voice Level, Q16 */
     int32_t pan_q16;        /* per-voice Pan, Q16 (32768 = center) */
-    uint8_t balance_group;  /* enum poppy_mix_group */
-#ifdef LIBPOPPY_EXTRA
+    uint8_t balance_group;  /* enum pops_mix_group */
+#ifdef LIBPOPS_EXTRA
     int32_t accent_gain_q16; /* pattern accent gain, Q16 (default 1.0) */
 #endif
     uint32_t prng;          /* xorshift32 state, never zero */
@@ -474,7 +474,7 @@ struct mp7_voice {
 
 /* Rhythm player state.
  *
- * `selected` has one bit per mp7_rhythm. `enable` is the combined 64-column
+ * `selected` has one bit per pops_rhythm. `enable` is the combined 64-column
  * step-enable mask (bit c is set when column c is enabled); it is zero when
  * no rhythm is selected, which means the sequencer is stopped. `notes` is the
  * combined grid: one 16-bit instrument mask per column, bit n set when
@@ -504,7 +504,7 @@ struct mp7_voice {
  * `source` is the set of patterns the selection refers to: the factory
  * rhythms or, in an extended build, the user slots. */
 struct mp7_sequencer {
-    uint32_t selected;                     /* bit n = mp7_rhythm n */
+    uint32_t selected;                     /* bit n = pops_rhythm n */
     uint32_t pending_selected;             /* selection for the next cycle */
     uint32_t tempo;                        /* BPM, clamped to 1..240 */
     uint32_t beat_samples;                 /* round(60 * sample_rate / tempo) */
@@ -526,8 +526,8 @@ struct mp7_sequencer {
     uint8_t source;                        /* MP7_SOURCE_PRESET or _USER */
 };
 
-/* Per-variant context. mp7_create_context() allocates and prepares it; the
- * fixed-memory entry points below are internal so the tests and mp7_reset()
+/* Per-variant context. pops_create_context() allocates and prepares it; the
+ * fixed-memory entry points below are internal so the tests and pops_reset()
  * can drive an existing context.
  *
  * The Guiro is the one gated voice, and the gate has two holders: the
@@ -536,19 +536,19 @@ struct mp7_sequencer {
  * holds the gate; `guiro_open` says whether it is gated right now. */
 struct mp7_context_s {
     uint32_t sample_rate;                  /* Hz, never 0 after init */
-    struct mp7_voice voices[MP7_INSTR_COUNT];
+    struct mp7_voice voices[POPS_INSTR_COUNT];
     struct mp7_sequencer sequencer;
-    struct poppy_mixer mixer;
+    struct pops_mixer mixer;
 
     /* The effective gain of every voice: its fixed Level, times the Balance
      * and the per-instrument gain, times the pattern accent of the note that
      * is sounding.
      *
-     * It is kept here rather than in a local of mp7_process() because it also
+     * It is kept here rather than in a local of pops_process() because it also
      * changes when a column fires, which can happen in the middle of a
      * block. Folding the accent in here keeps the per-sample path down to a
      * single multiply, the same as the preset-only build. */
-    int32_t voice_gain_q16[MP7_INSTR_COUNT];
+    int32_t voice_gain_q16[POPS_INSTR_COUNT];
 
     /* Shared reverb controls. They exist in every build so the control API
      * is unconditional; only MP7_FX_REVERB compiles the bus that reads
@@ -556,18 +556,18 @@ struct mp7_context_s {
      * the bus is compiled in, has delay memory, the wet level is non-zero
      * and at least one instrument send is non-zero. Otherwise the render
      * loop takes the dry path with no reverb work. */
-    int32_t instr_fx_send_q16[MP7_INSTR_COUNT];
+    int32_t instr_fx_send_q16[POPS_INSTR_COUNT];
     uint8_t fx_active;
 #if MP7_FX_REVERB
-    struct poppy_reverb reverb;
+    struct pops_reverb reverb;
 #endif
 
     uint8_t guiro_manual_gated;             /* the caller's own Guiro note-on */
     uint8_t guiro_open;                     /* the Guiro voice is gated now */
-#ifdef LIBPOPPY_EXTRA
-    struct mp7_user_slot user_patterns[MP7_USER_PATTERN_COUNT];
+#ifdef LIBPOPS_EXTRA
+    struct mp7_user_slot user_patterns[POPS_USER_PATTERN_COUNT];
 
-    /* User-modifiable synthesis parameters, reset by mp7_reset().
+    /* User-modifiable synthesis parameters, reset by pops_reset().
      *
      * The two arrays are indexed by the slot of the instrument in
      * mp7_instr_params[], so they are as long as the instruments that
@@ -579,7 +579,7 @@ struct mp7_context_s {
 };
 
 /* Fixed-memory context setup, kept out of the public header. */
-void mp7_init(mp7_context ctx, uint32_t sample_rate);
+void mp7_init(pops_context ctx, uint32_t sample_rate);
 
 /* Voice and engine internals, exercised directly by the Phase 2 test harness.
  * These are not part of the public API.
@@ -601,15 +601,15 @@ int64_t mp7_voice_process(struct mp7_voice *voice);
  * one truncates. */
 int32_t mp7_voice_gain_q16(const struct mp7_context_s *ctx,
                            const struct mp7_voice *voice);
-void mp7_voice_refresh_gain(struct mp7_context_s *ctx, mp7_instr instr);
+void mp7_voice_refresh_gain(struct mp7_context_s *ctx, pops_instr instr);
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
 /* Apply the decay multiplier or the cut-off of an instrument to its
  * voice. Both are no-ops for an instrument that does not have the
  * parameter. */
-void mp7_voice_apply_decay(struct mp7_context_s *ctx, mp7_instr instr);
-void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, mp7_instr instr);
-#endif /* LIBPOPPY_EXTRA */
+void mp7_voice_apply_decay(struct mp7_context_s *ctx, pops_instr instr);
+void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, pops_instr instr);
+#endif /* LIBPOPS_EXTRA */
 
 int64_t mp7_engine_process(struct mp7_voice *voice);
 
@@ -620,7 +620,7 @@ int64_t mp7_engine_process(struct mp7_voice *voice);
  * pattern view the host prints. It is a pure function of the selection and
  * of the source, so it can be asked for a selection that is not playing. */
 void mp7_pattern_compose(struct mp7_context_s *ctx, uint32_t selected,
-                         struct mp7_pattern_view *out);
+                         struct pops_pattern_view *out);
 void mp7_pattern_init(struct mp7_context_s *ctx);
 void mp7_pattern_combine(struct mp7_context_s *ctx, uint32_t selected_mask);
 void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm);
@@ -633,45 +633,45 @@ void mp7_guiro_gate(struct mp7_context_s *ctx,
                     uint8_t sequencer_gate,
                     uint8_t manual_gate);
 
-void poppy_osc_set_freq(struct poppy_osc *osc, uint32_t freq_hz, uint32_t sample_rate);
-int32_t poppy_sine_sample(const struct poppy_osc *osc);
-void poppy_env_trigger(struct poppy_env *env);
-void poppy_env_trigger_hold(struct poppy_env *env);
-void poppy_env_release(struct poppy_env *env, int32_t release_coef);
-int32_t poppy_env_process(struct poppy_env *env);
-int32_t poppy_env_coef_us(uint32_t time_us, uint32_t sample_rate);
+void pops_osc_set_freq(struct pops_osc *osc, uint32_t freq_hz, uint32_t sample_rate);
+int32_t pops_sine_sample(const struct pops_osc *osc);
+void pops_env_trigger(struct pops_env *env);
+void pops_env_trigger_hold(struct pops_env *env);
+void pops_env_release(struct pops_env *env, int32_t release_coef);
+int32_t pops_env_process(struct pops_env *env);
+int32_t pops_env_coef_us(uint32_t time_us, uint32_t sample_rate);
 
-void poppy_biquad_set_highpass(struct poppy_biquad *filter,
+void pops_biquad_set_highpass(struct pops_biquad *filter,
                                uint32_t freq_hz,
                                uint32_t sample_rate);
-void poppy_biquad_set_highpass_coeffs(struct poppy_biquad *filter,
+void pops_biquad_set_highpass_coeffs(struct pops_biquad *filter,
                                       uint32_t freq_hz,
                                       uint32_t sample_rate);
-void poppy_biquad_set_bandpass(struct poppy_biquad *filter,
+void pops_biquad_set_bandpass(struct pops_biquad *filter,
                                uint32_t freq_hz,
                                uint32_t res_q88,
                                uint32_t sample_rate);
-void poppy_biquad_set_bandpass_coeffs(struct poppy_biquad *filter,
+void pops_biquad_set_bandpass_coeffs(struct pops_biquad *filter,
                                       uint32_t freq_hz,
                                       uint32_t res_q88,
                                       uint32_t sample_rate);
-int32_t poppy_biquad_process(struct poppy_biquad *filter, int32_t sample_q31);
-int64_t poppy_softclip_q31(int64_t sample_q31);
+int32_t pops_biquad_process(struct pops_biquad *filter, int32_t sample_q31);
+int64_t pops_softclip_q31(int64_t sample_q31);
 
-void poppy_mixer_init(struct poppy_mixer *mixer);
-void poppy_mixer_set_volume(struct poppy_mixer *mixer, int32_t panel_volume_q16);
-void poppy_mixer_set_balance(struct poppy_mixer *mixer, int32_t balance_q16);
-void poppy_mixer_set_instr_gain(struct poppy_mixer *mixer,
+void pops_mixer_init(struct pops_mixer *mixer);
+void pops_mixer_set_volume(struct pops_mixer *mixer, int32_t panel_volume_q16);
+void pops_mixer_set_balance(struct pops_mixer *mixer, int32_t balance_q16);
+void pops_mixer_set_instr_gain(struct pops_mixer *mixer,
                                 unsigned int instr,
                                 int32_t gain_q16);
-void poppy_mixer_set_instr_pan(struct poppy_mixer *mixer,
+void pops_mixer_set_instr_pan(struct pops_mixer *mixer,
                                unsigned int instr,
                                int32_t pan_q16);
-int32_t poppy_mixer_balance_gain_q16(const struct poppy_mixer *mixer,
+int32_t pops_mixer_balance_gain_q16(const struct pops_mixer *mixer,
                                      unsigned int group);
-int64_t poppy_mixer_pan_left(int64_t sample_q31, int32_t pan_q16);
-int64_t poppy_mixer_pan_right(int64_t sample_q31, int32_t pan_q16);
-int16_t poppy_mixer_to_q15(int64_t sum_q31, int32_t panel_volume_q16);
+int64_t pops_mixer_pan_left(int64_t sample_q31, int32_t pan_q16);
+int64_t pops_mixer_pan_right(int64_t sample_q31, int32_t pan_q16);
+int16_t pops_mixer_to_q15(int64_t sum_q31, int32_t panel_volume_q16);
 
 /* Reverb controls and bus lifecycle.
  *
@@ -687,16 +687,16 @@ void mp7_fx_free(struct mp7_context_s *ctx);
 #if MP7_FX_REVERB
 /* The reverb DSP. It is independent of the context: the caller passes the
  * parameter values so the bus stays a reusable shared component. */
-int poppy_reverb_init(struct poppy_reverb *reverb);
-void poppy_reverb_free(struct poppy_reverb *reverb);
-void poppy_reverb_configure(struct poppy_reverb *reverb,
+int pops_reverb_init(struct pops_reverb *reverb);
+void pops_reverb_free(struct pops_reverb *reverb);
+void pops_reverb_configure(struct pops_reverb *reverb,
                             uint32_t sample_rate,
                             int32_t room_q16,
                             int32_t damping_q16,
                             int32_t width_q16,
                             int32_t wet_q16);
-void poppy_reverb_clear(struct poppy_reverb *reverb);
-void poppy_reverb_process(struct poppy_reverb *reverb,
+void pops_reverb_clear(struct pops_reverb *reverb);
+void pops_reverb_process(struct pops_reverb *reverb,
                           int64_t in_l,
                           int64_t in_r,
                           int32_t *out_l,

@@ -35,7 +35,7 @@ struct mp7_voice_config {
 #define HIHAT_BP  MP7_HIHAT_BANDPASS_HZ
 #define HIHAT_HP  MP7_HIHAT_HIGHPASS_HZ
 
-static const struct mp7_voice_config voice_config[MP7_INSTR_COUNT] = {
+static const struct mp7_voice_config voice_config[POPS_INSTR_COUNT] = {
     /* Bass */
     { MP7_ENGINE_SINE_AD  ,       65u,    0u,  0u,       0u,  1000u, 200000u,    0u,    0u,    0u,     0,     0 },
     /* Snare 1 */
@@ -68,13 +68,13 @@ static const struct mp7_voice_config voice_config[MP7_INSTR_COUNT] = {
     { MP7_ENGINE_QUIJADA  ,     2700u,    0u, 25u,       0u, 50000u, 300000u,    0u, 3600u,    0u,     0,     0 }
 };
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
 /* What the extended build exposes for each instrument.
  *
  * The cut-off is the band-pass center of the instrument, so the Hihat's
  * band-pass is the one that moves; its high-pass stays at the factory
  * value, and its band-pass cannot go below that high-pass. */
-const struct mp7_instr_param mp7_instr_params[MP7_INSTR_COUNT] = {
+const struct mp7_instr_param mp7_instr_params[POPS_INSTR_COUNT] = {
     /* Bass */
     { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u },
     /* Snare 1 */
@@ -106,21 +106,21 @@ const struct mp7_instr_param mp7_instr_params[MP7_INSTR_COUNT] = {
     /* Quijada */
     { 0, 0, MP7_PARAM_SLOT_NONE, 0u, 0u, 0u }
 };
-#endif /* LIBPOPPY_EXTRA */
+#endif /* LIBPOPS_EXTRA */
 
-static void env_set(struct poppy_env *env,
+static void env_set(struct pops_env *env,
                     uint32_t attack_us,
                     uint32_t decay_us,
                     uint32_t sample_rate)
 {
     memset(env, 0, sizeof(*env));
-    env->attack_coef = poppy_env_coef_us(attack_us, sample_rate);
-    env->decay_coef = poppy_env_coef_us(decay_us, sample_rate);
-    env->stage = POPPY_ENV_IDLE;
+    env->attack_coef = pops_env_coef_us(attack_us, sample_rate);
+    env->decay_coef = pops_env_coef_us(decay_us, sample_rate);
+    env->stage = POPS_ENV_IDLE;
 }
 
 static void voice_setup(struct mp7_voice *voice,
-                        mp7_instr instr,
+                        pops_instr instr,
                         const struct mp7_voice_config *config,
                         uint32_t sample_rate)
 {
@@ -130,21 +130,21 @@ static void voice_setup(struct mp7_voice *voice,
     voice->instr = instr;
     voice->engine = config->engine;
 
-    voice->level_q16 = POPPY_Q16_ONE;
-    voice->pan_q16 = POPPY_Q16_ONE / 2;
-    voice->balance_group = POPPY_MIX_GROUP_NONE;
-#ifdef LIBPOPPY_EXTRA
-    voice->accent_gain_q16 = POPPY_Q16_ONE;
+    voice->level_q16 = POPS_Q16_ONE;
+    voice->pan_q16 = POPS_Q16_ONE / 2;
+    voice->balance_group = POPS_MIX_GROUP_NONE;
+#ifdef LIBPOPS_EXTRA
+    voice->accent_gain_q16 = POPS_Q16_ONE;
 #endif
 
     switch (instr) {
-    case MP7_INSTR_BASS:
-        voice->balance_group = POPPY_MIX_GROUP_A;
+    case POPS_INSTR_BASS:
+        voice->balance_group = POPS_MIX_GROUP_A;
         break;
-    case MP7_INSTR_HIHAT:
-    case MP7_INSTR_CYMBAL_1:
-    case MP7_INSTR_CYMBAL_2:
-        voice->balance_group = POPPY_MIX_GROUP_B;
+    case POPS_INSTR_HIHAT:
+    case POPS_INSTR_CYMBAL_1:
+    case POPS_INSTR_CYMBAL_2:
+        voice->balance_group = POPS_MIX_GROUP_B;
         break;
     default:
         break;
@@ -153,7 +153,7 @@ static void voice_setup(struct mp7_voice *voice,
     seed = 0x9E3779B9u + (uint32_t)instr * 0x85EBCA6Bu;
     voice->prng = (seed != 0u) ? seed : 1u;
 
-    poppy_osc_set_freq(&voice->body_osc, config->freq_hz, sample_rate);
+    pops_osc_set_freq(&voice->body_osc, config->freq_hz, sample_rate);
 
     switch (config->engine) {
     case MP7_ENGINE_SINE_AD:
@@ -161,7 +161,7 @@ static void voice_setup(struct mp7_voice *voice,
         break;
 
     case MP7_ENGINE_DUAL_TONE:
-        poppy_osc_set_freq(&voice->aux_osc, config->freq2_hz, sample_rate);
+        pops_osc_set_freq(&voice->aux_osc, config->freq2_hz, sample_rate);
         env_set(&voice->amp_env, config->attack_us, config->decay_us, sample_rate);
         env_set(&voice->aux_env, config->attack_us, config->decay2_us, sample_rate);
         voice->level2_q16 = config->level2_q16;
@@ -170,8 +170,8 @@ static void voice_setup(struct mp7_voice *voice,
     case MP7_ENGINE_NOISE:
         env_set(&voice->amp_env, config->attack_us, config->decay_us, sample_rate);
         env_set(&voice->aux_env, config->attack_us, config->decay_us, sample_rate);
-        poppy_biquad_set_highpass(&voice->highpass, config->highpass_hz, sample_rate);
-        poppy_biquad_set_bandpass(&voice->bandpass,
+        pops_biquad_set_highpass(&voice->highpass, config->highpass_hz, sample_rate);
+        pops_biquad_set_bandpass(&voice->bandpass,
                                   config->freq_hz,
                                   config->res_q88,
                                   sample_rate);
@@ -179,7 +179,7 @@ static void voice_setup(struct mp7_voice *voice,
         break;
 
     case MP7_ENGINE_GUIRO:
-        poppy_osc_set_freq(&voice->aux_osc, config->rate_hz, sample_rate);
+        pops_osc_set_freq(&voice->aux_osc, config->rate_hz, sample_rate);
         env_set(&voice->amp_env, config->attack_us, config->density_us, sample_rate);
         env_set(&voice->body_env, 1000u, config->decay_us, sample_rate);
         break;
@@ -187,8 +187,8 @@ static void voice_setup(struct mp7_voice *voice,
     case MP7_ENGINE_QUIJADA:
         /* Rate drives the comparator clock; Frequency drives the audible
          * body oscillator (algorithm page, Quijada engine). */
-        poppy_osc_set_freq(&voice->body_osc, config->freq_hz, sample_rate);
-        poppy_osc_set_freq(&voice->aux_osc, config->rate_hz, sample_rate);
+        pops_osc_set_freq(&voice->body_osc, config->freq_hz, sample_rate);
+        pops_osc_set_freq(&voice->aux_osc, config->rate_hz, sample_rate);
         env_set(&voice->amp_env, config->attack_us, config->decay_us, sample_rate);
         env_set(&voice->short_env, 100u, config->density_us, sample_rate);
         env_set(&voice->long_env, 100u, config->density_us, sample_rate);
@@ -204,24 +204,24 @@ int32_t mp7_voice_gain_q16(const struct mp7_context_s *ctx,
 {
     int32_t gain = voice->level_q16;
 
-    gain = poppy_mul_q16(gain, poppy_mixer_balance_gain_q16(&ctx->mixer,
+    gain = pops_mul_q16(gain, pops_mixer_balance_gain_q16(&ctx->mixer,
                                                              voice->balance_group));
-    gain = poppy_mul_q16(gain, ctx->mixer.instr_gain_q16[voice->instr]);
-#ifdef LIBPOPPY_EXTRA
+    gain = pops_mul_q16(gain, ctx->mixer.instr_gain_q16[voice->instr]);
+#ifdef LIBPOPS_EXTRA
     /* The accent of the note that is sounding, last, so that it is the
      * same multiply the per-sample path used to do. */
-    gain = poppy_mul_q16(gain, voice->accent_gain_q16);
+    gain = pops_mul_q16(gain, voice->accent_gain_q16);
 #endif
 
     return gain;
 }
 
-void mp7_voice_refresh_gain(struct mp7_context_s *ctx, mp7_instr instr)
+void mp7_voice_refresh_gain(struct mp7_context_s *ctx, pops_instr instr)
 {
     ctx->voice_gain_q16[instr] = mp7_voice_gain_q16(ctx, &ctx->voices[instr]);
 }
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
 /* The cut-off the filters are actually tuned to.
  *
  * A biquad is only stable below Nyquist, and the design wraps around at
@@ -240,20 +240,20 @@ static uint32_t cutoff_limit_hz(uint32_t sample_rate)
  * env_set() would reset the envelope, which cuts a note that is
  * already ringing off with a click. Only the coefficients change here,
  * so the note keeps playing and simply decays at the new rate. */
-static void env_retime(struct poppy_env *env,
+static void env_retime(struct pops_env *env,
                        uint32_t attack_us,
                        uint32_t decay_us,
                        uint32_t sample_rate)
 {
-    env->attack_coef = poppy_env_coef_us(attack_us, sample_rate);
-    env->decay_coef = poppy_env_coef_us(decay_us, sample_rate);
+    env->attack_coef = pops_env_coef_us(attack_us, sample_rate);
+    env->decay_coef = pops_env_coef_us(decay_us, sample_rate);
 
     /* The running coefficient is a copy of the attack or the decay
      * coefficient, taken when the segment started, so it has to follow
      * the new value or the note would keep the old rate. */
-    if (env->stage == POPPY_ENV_ATTACK) {
+    if (env->stage == POPS_ENV_ATTACK) {
         env->coef = env->attack_coef;
-    } else if (env->stage == POPPY_ENV_DECAY) {
+    } else if (env->stage == POPS_ENV_DECAY) {
         env->coef = env->decay_coef;
     }
 }
@@ -266,7 +266,7 @@ static uint32_t scaled_decay_us(const struct mp7_voice_config *config,
                                 int32_t decay_q16)
 {
     int64_t scaled = ((int64_t)config->decay_us * (int64_t)decay_q16 +
-                      (POPPY_Q16_ONE / 2)) / POPPY_Q16_ONE;
+                      (POPS_Q16_ONE / 2)) / POPS_Q16_ONE;
 
     if (scaled < 0) {
         scaled = 0;
@@ -279,7 +279,7 @@ static uint32_t scaled_decay_us(const struct mp7_voice_config *config,
  * Every instrument that has a decay multiplier is a noise voice, whose
  * amplitude and tone envelopes both follow the factory decay, so one
  * function covers all of them. */
-void mp7_voice_apply_decay(struct mp7_context_s *ctx, mp7_instr instr)
+void mp7_voice_apply_decay(struct mp7_context_s *ctx, pops_instr instr)
 {
     struct mp7_voice *voice = &ctx->voices[instr];
     const struct mp7_voice_config *config = &voice_config[instr];
@@ -301,7 +301,7 @@ void mp7_voice_apply_decay(struct mp7_context_s *ctx, mp7_instr instr)
  * The cut-off is the band-pass center of every instrument that has one.
  * The Hihat's high-pass stays at the factory value, so the band-pass is
  * the only filter the cut-off moves. */
-void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, mp7_instr instr)
+void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, pops_instr instr)
 {
     struct mp7_voice *voice = &ctx->voices[instr];
     const struct mp7_voice_config *config = &voice_config[instr];
@@ -318,12 +318,12 @@ void mp7_voice_apply_cutoff(struct mp7_context_s *ctx, mp7_instr instr)
         freq_hz = limit;
     }
 
-    poppy_biquad_set_bandpass_coeffs(&voice->bandpass,
+    pops_biquad_set_bandpass_coeffs(&voice->bandpass,
                                      freq_hz,
                                      config->res_q88,
                                      ctx->sample_rate);
 }
-#endif /* LIBPOPPY_EXTRA */
+#endif /* LIBPOPS_EXTRA */
 
 void mp7_voice_init_all(struct mp7_context_s *ctx)
 {
@@ -334,20 +334,20 @@ void mp7_voice_init_all(struct mp7_context_s *ctx)
      * per-voice setting, a sample-rate change must not clear it. The Pan
      * comes from the per-instrument pan in the mixer, so it is re-applied
      * here. */
-    for (i = 0; i < (unsigned int)MP7_INSTR_COUNT; i++) {
-        voice_setup(&ctx->voices[i], (mp7_instr)i, &voice_config[i], ctx->sample_rate);
+    for (i = 0; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+        voice_setup(&ctx->voices[i], (pops_instr)i, &voice_config[i], ctx->sample_rate);
         ctx->voices[i].pan_q16 = ctx->mixer.instr_pan_q16[i];
     }
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
     /* Re-apply any user-modified synthesis parameters after the voices have
      * been reset to their factory defaults. */
-    for (i = 0; i < (unsigned int)MP7_INSTR_COUNT; i++) {
+    for (i = 0; i < (unsigned int)POPS_INSTR_COUNT; i++) {
         if (mp7_instr_params[i].has_decay) {
-            mp7_voice_apply_decay(ctx, (mp7_instr)i);
+            mp7_voice_apply_decay(ctx, (pops_instr)i);
         }
         if (mp7_instr_params[i].has_cutoff) {
-            mp7_voice_apply_cutoff(ctx, (mp7_instr)i);
+            mp7_voice_apply_cutoff(ctx, (pops_instr)i);
         }
     }
 #endif
@@ -363,17 +363,17 @@ void mp7_voice_trigger(struct mp7_voice *voice)
 
     switch (voice->engine) {
     case MP7_ENGINE_SINE_AD:
-        poppy_env_trigger(&voice->amp_env);
+        pops_env_trigger(&voice->amp_env);
         break;
 
     case MP7_ENGINE_DUAL_TONE:
-        poppy_env_trigger(&voice->amp_env);
-        poppy_env_trigger(&voice->aux_env);
+        pops_env_trigger(&voice->amp_env);
+        pops_env_trigger(&voice->aux_env);
         break;
 
     case MP7_ENGINE_NOISE:
-        poppy_env_trigger(&voice->amp_env);
-        poppy_env_trigger(&voice->aux_env);
+        pops_env_trigger(&voice->amp_env);
+        pops_env_trigger(&voice->aux_env);
         voice->highpass.x1 = 0;
         voice->highpass.x2 = 0;
         voice->highpass.y1 = 0;
@@ -385,25 +385,25 @@ void mp7_voice_trigger(struct mp7_voice *voice)
         break;
 
     case MP7_ENGINE_GUIRO:
-        poppy_env_trigger_hold(&voice->amp_env);
-        voice->body_env.stage = POPPY_ENV_IDLE;
+        pops_env_trigger_hold(&voice->amp_env);
+        voice->body_env.stage = POPS_ENV_IDLE;
         voice->body_env.value = 0;
         voice->last_rate = 0;
         break;
 
     case MP7_ENGINE_QUIJADA:
-        poppy_env_trigger(&voice->amp_env);
+        pops_env_trigger(&voice->amp_env);
         /* The secondary envelopes are deliberately not reset: the trigger
          * leaves them running and only restarts the body envelope. */
 
         /* Both thresholds are re-randomized on every trigger:
          * t = 0.1 + fabs(u) * 0.5, with u uniform in [-1, 1). In Q30 that is
          * 0.1 * 2^30 + abs(u_q31) / 4. */
-        r1 = poppy_prng_next(&voice->prng);
-        r2 = poppy_prng_next(&voice->prng);
-        t = POPPY_Q30_ONE / 10;
-        voice->threshold_lo = t + (poppy_abs_i32((int32_t)r1) / 4);
-        voice->threshold_hi = t + (poppy_abs_i32((int32_t)r2) / 4);
+        r1 = pops_prng_next(&voice->prng);
+        r2 = pops_prng_next(&voice->prng);
+        t = POPS_Q30_ONE / 10;
+        voice->threshold_lo = t + (pops_abs_i32((int32_t)r1) / 4);
+        voice->threshold_hi = t + (pops_abs_i32((int32_t)r2) / 4);
         break;
 
     default:
@@ -414,7 +414,7 @@ void mp7_voice_trigger(struct mp7_voice *voice)
 void mp7_voice_release(struct mp7_voice *voice)
 {
     if ((voice->engine == MP7_ENGINE_GUIRO) && voice->active) {
-        poppy_env_release(&voice->amp_env, voice->amp_env.decay_coef);
+        pops_env_release(&voice->amp_env, voice->amp_env.decay_coef);
     }
 }
 

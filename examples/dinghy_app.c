@@ -1,16 +1,16 @@
 /*
- * dinghy_app.c - libpoppy on the M-VAVE FM-1, as a Dinghy firmware.
+ * dinghy_app.c - libpops on the M-VAVE FM-1, as a Dinghy firmware.
  *
  * This is a drop-in replacement for Dinghy's firmware/src/dinghy.c:
  *
  *   https://github.com/zvenson/dinghy
  *
- * It is not part of libpoppy and the library's Makefile does not build it.
- * Copy it into a Dinghy checkout, together with libpoppy.a and mp7.h:
+ * It is not part of libpops and the library's Makefile does not build it.
+ * Copy it into a Dinghy checkout, together with libpops.a and pops.h:
  *
  *   cp examples/dinghy_app.c        dinghy/firmware/src/dinghy.c
  *   mkdir -p                        dinghy/firmware/lib
- *   cp libpoppy.a mp7.h             dinghy/firmware/lib/
+ *   cp libpops.a pops.h             dinghy/firmware/lib/
  *
  * Then tell Dinghy's tools/build.py about the archive. In build_app():
  *
@@ -19,9 +19,9 @@
  *   ...
  *   tc("pi32v2/bin/ld", "--gc-sections", "-e", "_start", "-T", FW / "app.ld",
  *      OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o", OUT / "dinghy.o",
- *      FW / "lib" / "libpoppy.a", "-o", elf)
+ *      FW / "lib" / "libpops.a", "-o", elf)
  *
- * For host mode, build libpoppy.a on the host and add firmware/lib/libpoppy.a
+ * For host mode, build libpops.a on the host and add firmware/lib/libpops.a
  * to the cc line in tests/run_host.sh. For the FM-1, build it with the same
  * JieLi toolchain (a host archive does not link into the firmware). With the
  * toolchain in $JIELI:
@@ -30,13 +30,13 @@
  *             -isystem $JIELI/pi32v2/include" \
  *        AR=$JIELI/common/bin/llvm-ar RANLIB=:
  *
- * The -isystem path is the toolchain's newlib headers; libpoppy includes
+ * The -isystem path is the toolchain's newlib headers; libpops includes
  * <stdlib.h> and <string.h>, which clang does not search for by itself.
  *
  * A real firmware must also pick its own FELUCCA_ID in tools/build.py; the
  * example leaves Dinghy's default so it is not mistaken for a release.
  *
- * What this file adds around libpoppy:
+ * What this file adds around libpops:
  *
  *   1. app_audio() / app_main(), Dinghy's two entry points. The audio ISR is
  *      given 256 stereo frames at 44.1 kHz, not the 128-frame half buffer of
@@ -44,17 +44,17 @@
  *      Dinghy buffer is int32_t, so the block is widened by adding it.
  *
  *   2. A .pool bump allocator. Dinghy is freestanding (libc.c has no malloc)
- *      while mp7_create_context() and the shared sine table allocate. The
+ *      while pops_create_context() and the shared sine table allocate. The
  *      heap is zeroed at boot, the context is created once, and the firmware
  *      never returns from app_main(), so free() is a no-op. 16 KiB holds the
  *      8 KiB sine table and the ~4 KiB context.
  *
  *   3. Compiler helpers for 64-bit division. The JieLi toolchain links no
- *      libgcc, and libpoppy's setup path divides 64-bit values. __divdi3(),
+ *      libgcc, and libpops's setup path divides 64-bit values. __divdi3(),
  *      __udivdi3(), __moddi3() and __umoddi3() are only reached while the
  *      context is created or a control changes, never in the audio ISR.
  *
- *   4. IRQ masking. libpoppy is not thread-safe: mp7_process() must not run
+ *   4. IRQ masking. libpops is not thread-safe: pops_process() must not run
  *      while the context is created or a setter runs. Dinghy starts the audio
  *      interrupt before app_main(), so the context is created and every
  *      panel change is applied with interrupts off. The setters are short;
@@ -83,9 +83,9 @@
 #define APP_NAME "MINIPOPS"
 
 #include "platform.c"
-#include "mp7.h"
+#include "pops.h"
 
-/* ---- a heap for libpoppy (Dinghy has none) */
+ /* ---- a heap for libpops (Dinghy has none) */
 
 #ifndef DINGHY_HOST
 static uint8_t app_heap[16u * 1024u]
@@ -174,7 +174,7 @@ int64_t __moddi3(int64_t a, int64_t b)
 
 /* ---- state shared with the audio ISR */
 
-static mp7_context app_ctx;
+static pops_context app_ctx;
 static int16_t app_mix[HALF_FRAMES * 2u];
 
 static uint32_t irq_lock(void)
@@ -195,12 +195,12 @@ static void irq_unlock(uint32_t flags)
 #endif
 }
 
-/* Dinghy gives app_audio() int32_t frames (Q15 in an int32_t); libpoppy writes
+ /* Dinghy gives app_audio() int32_t frames (Q15 in an int32_t); libpops writes
  * int16_t. `out` is already zero, so adding is the same as assigning, but
  * leaves room for another layer if the firmware grows one. */
 static void app_audio(int32_t *out, uint32_t frames)
 {
-    mp7_context ctx = app_ctx;
+    pops_context ctx = app_ctx;
 
     if (ctx == 0) {
         return;                         /* the buffer is already silence */
@@ -210,7 +210,7 @@ static void app_audio(int32_t *out, uint32_t frames)
         uint32_t n = (frames < HALF_FRAMES) ? frames : HALF_FRAMES;
         uint32_t i;
 
-        mp7_process(ctx, app_mix, n);
+        pops_process(ctx, app_mix, n);
         for (i = 0u; i < 2u * n; i++) {
             out[i] += app_mix[i];
         }
@@ -246,7 +246,7 @@ static uint16_t app_tempo = 120u;
 static int32_t app_gain_tambourine = APP_Q16_ONE / 2;
 static int32_t app_gain_guiro = APP_Q16_ONE / 2;
 static int32_t app_gain_quijada = APP_Q16_ONE / 2;
-static mp7_bank app_bank = MP7_BANK_A;
+static pops_bank app_bank = POPS_BANK_A;
 static uint16_t app_buttons = 0u;
 static int app_running = 0;
 
@@ -291,7 +291,7 @@ static const char *app_selection_name(void)
     if (count > 1u) {
         return "COMBINATION";
     }
-    return APP_RHYTHM_NAME[(app_bank == MP7_BANK_B ? 10u : 0u) + first];
+    return APP_RHYTHM_NAME[(app_bank == POPS_BANK_B ? 10u : 0u) + first];
 }
 
 static void app_utoa(char *out, uint32_t value)
@@ -315,7 +315,7 @@ static void app_draw(void)
     char line[16];
 
     draw_text_box(0, 58, 100, &FONT_S,
-                  app_bank == MP7_BANK_B ? "BANK B" : "BANK A",
+                  app_bank == POPS_BANK_B ? "BANK B" : "BANK A",
                   APP_OFF, 0);
     draw_text_box(100, 58, 140, &FONT_S, app_selection_name(), C_WHITE, 2);
 
@@ -329,7 +329,7 @@ static void app_draw(void)
                   (app_ctx == 0) ? APP_OFF : (app_running ? APP_ACCENT : APP_OFF), 1);
 }
 
-/* ---- applying controls (never while mp7_process() runs) */
+/* ---- applying controls (never while pops_process() runs) */
 
 static void app_set_tempo(uint16_t bpm)
 {
@@ -339,11 +339,11 @@ static void app_set_tempo(uint16_t bpm)
         return;
     }
     flags = irq_lock();
-    mp7_set_tempo(app_ctx, bpm);
+    pops_set_tempo(app_ctx, bpm);
     irq_unlock(flags);
 }
 
-static void app_set_gain(mp7_instr instr, int32_t gain_q16)
+static void app_set_gain(pops_instr instr, int32_t gain_q16)
 {
     uint32_t flags;
 
@@ -351,7 +351,7 @@ static void app_set_gain(mp7_instr instr, int32_t gain_q16)
         return;
     }
     flags = irq_lock();
-    mp7_set_instr_gain(app_ctx, instr, gain_q16);
+    pops_set_instr_gain(app_ctx, instr, gain_q16);
     irq_unlock(flags);
 }
 
@@ -363,9 +363,9 @@ static void app_apply_rhythm(void)
         return;
     }
     flags = irq_lock();
-    mp7_select_rhythm(app_ctx, app_bank, app_buttons);
+    pops_select_rhythm(app_ctx, app_bank, app_buttons);
     if (!app_running) {
-        mp7_stop_rhythms(app_ctx);      /* selecting must not start it */
+        pops_stop_rhythms(app_ctx);      /* selecting must not start it */
     }
     irq_unlock(flags);
 }
@@ -380,9 +380,9 @@ static void app_set_running(int running)
     }
     flags = irq_lock();
     if (app_running) {
-        mp7_select_rhythm(app_ctx, app_bank, app_buttons);
+        pops_select_rhythm(app_ctx, app_bank, app_buttons);
     } else {
-        mp7_stop_rhythms(app_ctx);
+        pops_stop_rhythms(app_ctx);
         /* The last pattern hit can still be ringing; keep the flash quiet
          * for a while after the transport stops. */
         app_last_trigger_at = fm1_ms;
@@ -390,7 +390,7 @@ static void app_set_running(int running)
     irq_unlock(flags);
 }
 
-static void app_trigger(mp7_instr instr, uint8_t velocity)
+static void app_trigger(pops_instr instr, uint8_t velocity)
 {
     uint32_t flags;
 
@@ -398,7 +398,7 @@ static void app_trigger(mp7_instr instr, uint8_t velocity)
         return;
     }
     flags = irq_lock();
-    mp7_trigger(app_ctx, instr, velocity);
+    pops_trigger(app_ctx, instr, velocity);
     irq_unlock(flags);
     app_last_trigger_at = fm1_ms;
 }
@@ -432,7 +432,7 @@ static void app_load_settings(void)
     app_gain_guiro = app_clamp(s.gain_guiro, 0, APP_Q16_ONE);
     app_gain_quijada = app_clamp(s.gain_quijada, 0, APP_Q16_ONE);
     app_buttons = (uint16_t)(s.buttons & 0x03FFu);
-    app_bank = (s.bank == (uint8_t)MP7_BANK_B) ? MP7_BANK_B : MP7_BANK_A;
+    app_bank = (s.bank == (uint8_t)POPS_BANK_B) ? POPS_BANK_B : POPS_BANK_A;
 }
 
 static void app_save_settings(void)
@@ -484,17 +484,17 @@ static void app_main(void)
 
     /* Dinghy enables the audio interrupt before app_main(). Mask it while the
      * context and the shared sine table are allocated; a boot-time underrun
-     * is harmless, a concurrent mp7_process() is not. */
+     * is harmless, a concurrent pops_process() is not. */
     flags = irq_lock();
-    app_ctx = mp7_create_context(FS);
+    app_ctx = pops_create_context(FS);
     if (app_ctx != 0) {
-        mp7_set_tempo(app_ctx, app_tempo);
-        mp7_set_instr_gain(app_ctx, MP7_INSTR_TAMBOURINE, app_gain_tambourine);
-        mp7_set_instr_gain(app_ctx, MP7_INSTR_GUIRO, app_gain_guiro);
-        mp7_set_instr_gain(app_ctx, MP7_INSTR_QUIJADA, app_gain_quijada);
-        mp7_select_rhythm(app_ctx, app_bank, app_buttons);
+        pops_set_tempo(app_ctx, app_tempo);
+        pops_set_instr_gain(app_ctx, POPS_INSTR_TAMBOURINE, app_gain_tambourine);
+        pops_set_instr_gain(app_ctx, POPS_INSTR_GUIRO, app_gain_guiro);
+        pops_set_instr_gain(app_ctx, POPS_INSTR_QUIJADA, app_gain_quijada);
+        pops_select_rhythm(app_ctx, app_bank, app_buttons);
         if (!app_running) {
-            mp7_stop_rhythms(app_ctx);
+            pops_stop_rhythms(app_ctx);
         }
     }
     irq_unlock(flags);
@@ -505,7 +505,7 @@ static void app_main(void)
 
     for (;;) {
         uint32_t keys, pressed, released, notes_pressed, i;
-        struct mp7_panel_state panel;
+        struct pops_panel_state panel;
         int32_t steps;
 
         platform_poll();
@@ -528,7 +528,7 @@ static void app_main(void)
             }
         }
         if ((pressed & (1u << BTN_SEL)) != 0u) {
-            app_bank = (app_bank == MP7_BANK_A) ? MP7_BANK_B : MP7_BANK_A;
+            app_bank = (app_bank == POPS_BANK_A) ? POPS_BANK_B : POPS_BANK_A;
             app_touch();
             app_apply_rhythm();
         }
@@ -543,7 +543,7 @@ static void app_main(void)
 
             if (gain != app_gain_quijada) {
                 app_gain_quijada = gain;
-                app_set_gain(MP7_INSTR_QUIJADA, app_gain_quijada);
+                app_set_gain(POPS_INSTR_QUIJADA, app_gain_quijada);
                 app_touch();
             }
         }
@@ -555,7 +555,7 @@ static void app_main(void)
 
             if (gain != app_gain_guiro) {
                 app_gain_guiro = gain;
-                app_set_gain(MP7_INSTR_GUIRO, app_gain_guiro);
+                app_set_gain(POPS_INSTR_GUIRO, app_gain_guiro);
                 app_touch();
             }
         }
@@ -567,7 +567,7 @@ static void app_main(void)
 
             if (gain != app_gain_tambourine) {
                 app_gain_tambourine = gain;
-                app_set_gain(MP7_INSTR_TAMBOURINE, app_gain_tambourine);
+                app_set_gain(POPS_INSTR_TAMBOURINE, app_gain_tambourine);
                 app_touch();
             }
         }
@@ -594,18 +594,18 @@ static void app_main(void)
                     continue;
                 }
                 if (((status & 0xF0u) == 0x90u) && (d2 != 0u)) {
-                    app_trigger((mp7_instr)instr, d2);
+                    app_trigger((pops_instr)instr, d2);
                 } else if (((status & 0xF0u) == 0x80u) ||
                            (((status & 0xF0u) == 0x90u) && (d2 == 0u))) {
-                    if (instr == (int)MP7_INSTR_GUIRO) {
-                        app_trigger(MP7_INSTR_GUIRO, 0u);
+                    if (instr == (int)POPS_INSTR_GUIRO) {
+                        app_trigger(POPS_INSTR_GUIRO, 0u);
                     }
                 }
             }
         }
 
         flags = irq_lock();
-        mp7_get_panel_state(app_ctx, &panel);
+        pops_get_panel_state(app_ctx, &panel);
         irq_unlock(flags);
 
         if (panel.flash_count != last_flash) {
@@ -616,7 +616,7 @@ static void app_main(void)
         for (i = 0u; i < 10u; i++) {
             fm1_led_key(KEY_LED(APP_RHYTHM_KEY[i]), (app_buttons >> i) & 1u);
         }
-        fm1_led_key(BTN_SEL, app_bank == MP7_BANK_B);
+        fm1_led_key(BTN_SEL, app_bank == POPS_BANK_B);
         fm1_led_key(BTN_PLAY, app_running && ((int32_t)(flash_until - fm1_ms) > 0));
 
         if ((app_bank != drawn_bank) || (app_buttons != drawn_buttons) ||

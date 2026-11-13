@@ -9,11 +9,11 @@
 #include <string.h>
 #include <time.h>
 
-#include "mp7.h"
+#include "pops.h"
 
 #define BUFFER_COUNT 4
 #define BUFFER_FRAMES 4096
-#define SAMPLE_RATE MP7_DEFAULT_SAMPLE_RATE
+#define SAMPLE_RATE POPS_DEFAULT_SAMPLE_RATE
 
 static volatile sig_atomic_t keep_running = 1;
 
@@ -87,14 +87,14 @@ static int parse_buttons(const char *text, uint16_t *out)
     return 1;
 }
 
-static int parse_bank(const char *text, mp7_bank *out)
+static int parse_bank(const char *text, pops_bank *out)
 {
     if (((text[0] == 'A') || (text[0] == 'a')) && (text[1] == '\0')) {
-        *out = MP7_BANK_A;
+        *out = POPS_BANK_A;
         return 1;
     }
     if (((text[0] == 'B') || (text[0] == 'b')) && (text[1] == '\0')) {
-        *out = MP7_BANK_B;
+        *out = POPS_BANK_B;
         return 1;
     }
     return 0;
@@ -137,10 +137,10 @@ static void clear_errors(void)
     }
 }
 
-static int fill_buffer(mp7_context ctx, ALuint buffer, int16_t *pcm)
+static int fill_buffer(pops_context ctx, ALuint buffer, int16_t *pcm)
 {
     clear_errors();
-    mp7_process(ctx, pcm, BUFFER_FRAMES);
+    pops_process(ctx, pcm, BUFFER_FRAMES);
     alBufferData(buffer, AL_FORMAT_STEREO16, pcm,
                  (ALsizei)(BUFFER_FRAMES * 2u * sizeof(int16_t)),
                  (ALsizei)SAMPLE_RATE);
@@ -148,7 +148,7 @@ static int fill_buffer(mp7_context ctx, ALuint buffer, int16_t *pcm)
     return alGetError() == AL_NO_ERROR;
 }
 
-static int play(mp7_context ctx)
+static int play(pops_context ctx)
 {
     ALCdevice *device;
     ALCcontext *alc_context;
@@ -271,9 +271,9 @@ cleanup:
 int main(int argc, char **argv)
 {
     long tempo = 120;
-    mp7_bank bank = MP7_BANK_A;
+    pops_bank bank = POPS_BANK_A;
     uint16_t buttons = 0;
-    mp7_context ctx;
+    pops_context ctx;
     int i;
     int status;
 
@@ -319,20 +319,20 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    ctx = mp7_create_context(SAMPLE_RATE);
+    ctx = pops_create_context(SAMPLE_RATE);
     if (ctx == NULL) {
         fprintf(stderr, "%s: out of memory\n", argv[0]);
         return 1;
     }
 
-    mp7_set_tempo(ctx, (uint16_t)tempo);
-    mp7_select_rhythm(ctx, bank, buttons);
+    pops_set_tempo(ctx, (uint16_t)tempo);
+    pops_select_rhythm(ctx, bank, buttons);
 
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
     status = play(ctx);
 
-    mp7_destroy_context(ctx);
+    pops_destroy_context(ctx);
     return status;
 }

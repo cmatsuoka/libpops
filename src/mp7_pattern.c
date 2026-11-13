@@ -17,7 +17,7 @@
  * the combined grid of every selection, and it is the whole grid when no
  * rhythm button is pressed.
  *
- * An extended build (-DLIBPOPPY_EXTRA) has a second set of patterns, the
+ * An extended build (-DLIBPOPS_EXTRA) has a second set of patterns, the
  * user slots, and the selection is read against them when the sequencer
  * points at that source. A user pattern is complete - it carries its own
  * percussion lines - so the shared layer is not added to it. Its mask comes
@@ -124,11 +124,11 @@ void mp7_guiro_gate(struct mp7_context_s *ctx,
         /* Re-entering an adjacent X keeps the gate open, so the ratchet runs
          * without a release gap and is not restarted. */
         if (ctx->guiro_open == 0u) {
-            mp7_voice_trigger(&ctx->voices[MP7_INSTR_GUIRO]);
+            mp7_voice_trigger(&ctx->voices[POPS_INSTR_GUIRO]);
             ctx->guiro_open = 1u;
         }
     } else if (ctx->guiro_open != 0u) {
-        mp7_voice_release(&ctx->voices[MP7_INSTR_GUIRO]);
+        mp7_voice_release(&ctx->voices[POPS_INSTR_GUIRO]);
         ctx->guiro_open = 0u;
     }
 }
@@ -197,32 +197,32 @@ void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm)
  * is neither of the two.
  *
  * The signature of the selection is the signature its patterns carry, and
- * MP7_TIMESIG_NONE when they do not all carry the same one. It is not the
+ * POPS_TIMESIG_NONE when they do not all carry the same one. It is not the
  * signature of the combined mask: a 4/4 and a 3/4 pattern combined are a
  * mixed selection, although their combined mask is the one of the 3/4. */
 void mp7_pattern_compose(struct mp7_context_s *ctx, uint32_t selected,
-                         struct mp7_pattern_view *out)
+                         struct pops_pattern_view *out)
 {
     unsigned int column;
     unsigned int index;
     int have_signature = 0;
     int mixed = 0;
-    mp7_timesig signature = MP7_TIMESIG_NONE;
+    pops_timesig signature = POPS_TIMESIG_NONE;
 
     memset(out, 0, sizeof(*out));
     out->enable = ~(uint64_t)0;
 
-#ifndef LIBPOPPY_EXTRA
+#ifndef LIBPOPS_EXTRA
     /* The preset-only build has no user slots, so the composition does not
      * need the context. */
     (void)ctx;
 #endif
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
     /* The user slots are a complete set of patterns of their own, so the
      * selection is read against them instead of the factory rhythms. */
     if (ctx->sequencer.source == MP7_SOURCE_USER) {
-        for (index = 0u; index < (unsigned int)MP7_RHYTHM_COUNT; index++) {
+        for (index = 0u; index < (unsigned int)POPS_RHYTHM_COUNT; index++) {
             const struct mp7_user_slot *slot;
             uint64_t mask;
 
@@ -241,14 +241,14 @@ void mp7_pattern_compose(struct mp7_context_s *ctx, uint32_t selected,
 
             /* The mask comes from the time signature of the slot, so it is
              * one of the six the library knows. */
-            mask = mp7_timesig_enable_mask((mp7_timesig)slot->timesig);
+            mask = pops_timesig_enable_mask((pops_timesig)slot->timesig);
             out->enable &= mask;
             out->compound |= mp7_mask_is_compound(mask);
 
             if (!have_signature) {
-                signature = (mp7_timesig)slot->timesig;
+                signature = (pops_timesig)slot->timesig;
                 have_signature = 1;
-            } else if ((mp7_timesig)slot->timesig != signature) {
+            } else if ((pops_timesig)slot->timesig != signature) {
                 mixed = 1;
             }
         }
@@ -256,15 +256,15 @@ void mp7_pattern_compose(struct mp7_context_s *ctx, uint32_t selected,
         /* With no button pressed the user source keeps the transport running
          * and stays silent: the shared percussion layer belongs to the
          * factory rhythms. */
-        out->timesig = mixed ? MP7_TIMESIG_NONE
-                              : (have_signature ? signature : MP7_TIMESIG_4_4);
+        out->timesig = mixed ? POPS_TIMESIG_NONE
+                              : (have_signature ? signature : POPS_TIMESIG_4_4);
         return;
     }
-#endif /* LIBPOPPY_EXTRA */
+#endif /* LIBPOPS_EXTRA */
 
-    for (index = 0u; index < (unsigned int)MP7_RHYTHM_COUNT; index++) {
+    for (index = 0u; index < (unsigned int)POPS_RHYTHM_COUNT; index++) {
         const struct mp7_factory_rhythm *pattern;
-        mp7_timesig pattern_signature;
+        pops_timesig pattern_signature;
 
         if ((selected & ((uint32_t)1u << index)) == 0u) {
             continue;
@@ -294,15 +294,15 @@ void mp7_pattern_compose(struct mp7_context_s *ctx, uint32_t selected,
             wrap_column(column, MP7_PATTERN_HALF_STEPS)];
     }
 
-    out->timesig = mixed ? MP7_TIMESIG_NONE
-                          : (have_signature ? signature : MP7_TIMESIG_4_4);
+    out->timesig = mixed ? POPS_TIMESIG_NONE
+                          : (have_signature ? signature : POPS_TIMESIG_4_4);
 }
 
 void mp7_pattern_combine(struct mp7_context_s *ctx, uint32_t selected_mask)
 {
     struct mp7_sequencer *seq = &ctx->sequencer;
-    struct mp7_pattern_view view;
-    uint32_t selected = selected_mask & ((1u << MP7_RHYTHM_COUNT) - 1u);
+    struct pops_pattern_view view;
+    uint32_t selected = selected_mask & ((1u << POPS_RHYTHM_COUNT) - 1u);
 
     seq->selected = selected;
 
@@ -421,16 +421,16 @@ static void fire_column(struct mp7_context_s *ctx)
     column = seq->column;
     hits = seq->notes[column];
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
     {
         int accented = (int)((hits & MP7_PATTERN_ACCENT_BIT) != 0u);
 
         hits &= MP7_PATTERN_INSTRUMENT_MASK;
 
-        for (instr = 0u; instr < (unsigned int)MP7_INSTR_COUNT; instr++) {
+        for (instr = 0u; instr < (unsigned int)POPS_INSTR_COUNT; instr++) {
             int hit = (int)((hits >> instr) & 1u);
 
-            if (instr == (unsigned int)MP7_INSTR_GUIRO) {
+            if (instr == (unsigned int)POPS_INSTR_GUIRO) {
                 /* The gate belongs to the sequencer, but a note the caller
                  * triggered itself keeps it open as well. */
                 mp7_guiro_gate(ctx, (uint8_t)(hit != 0), ctx->guiro_manual_gated);
@@ -439,19 +439,19 @@ static void fire_column(struct mp7_context_s *ctx)
 
                 voice->accent_gain_q16 = accented
                     ? ctx->accent_gain_q16
-                    : POPPY_Q16_ONE;
+                    : POPS_Q16_ONE;
                 /* The accent is part of the voice's gain, so the cached
                  * gain has to follow it. */
-                mp7_voice_refresh_gain(ctx, (mp7_instr)instr);
+                mp7_voice_refresh_gain(ctx, (pops_instr)instr);
                 mp7_voice_trigger(voice);
             }
         }
     }
 #else
-    for (instr = 0u; instr < (unsigned int)MP7_INSTR_COUNT; instr++) {
+    for (instr = 0u; instr < (unsigned int)POPS_INSTR_COUNT; instr++) {
         int hit = (int)((hits >> instr) & 1u);
 
-        if (instr == (unsigned int)MP7_INSTR_GUIRO) {
+        if (instr == (unsigned int)POPS_INSTR_GUIRO) {
             /* The gate belongs to the sequencer, but a note the caller
              * triggered itself keeps it open as well. */
             mp7_guiro_gate(ctx, (uint8_t)(hit != 0), ctx->guiro_manual_gated);

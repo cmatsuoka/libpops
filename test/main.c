@@ -22,7 +22,7 @@
  *   --pattern           verify the 20 patterns, combination and timing
  *   --rhythms [dir]     render all 20 rhythms and two combinations to WAV
  *   --user              verify the user pattern slots and the pattern source
- *                       switch (an extended build, -DLIBPOPPY_EXTRA, only)
+ *                       switch (an extended build, -DLIBPOPS_EXTRA, only)
  *   --help              this text
  *
  * Exit status is 0 when every check passed, 1 otherwise.
@@ -33,7 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "mp7.h"
+#include "pops.h"
 #include "mp7_fixed.h"
 #include "mp7_internal.h"
 #include "wav_writer.h"
@@ -44,7 +44,7 @@
 
 #define TEST_SILENCE_SECONDS 0.25
 
-static const char *const test_rhythm_names[MP7_RHYTHM_COUNT] = {
+static const char *const test_rhythm_names[POPS_RHYTHM_COUNT] = {
     "Waltz",
     "Samba",
     "Mambo",
@@ -98,28 +98,28 @@ static int command_init(void)
 
     printf("context size        : %lu bytes\n",
            (unsigned long)sizeof(struct mp7_context_s));
-    printf("default sample rate : %u Hz\n", (unsigned)MP7_DEFAULT_SAMPLE_RATE);
+    printf("default sample rate : %u Hz\n", (unsigned)POPS_DEFAULT_SAMPLE_RATE);
 
     mp7_init(ctx, 0);
-    if (ctx->sample_rate != MP7_DEFAULT_SAMPLE_RATE) {
+    if (ctx->sample_rate != POPS_DEFAULT_SAMPLE_RATE) {
         fail("mp7_init(ctx, 0) did not select the default sample rate");
     } else {
         ok("mp7_init(ctx, 0) selects the default sample rate");
     }
 
-    mp7_set_sample_rate(ctx, 22050);
+    pops_set_sample_rate(ctx, 22050);
     if (ctx->sample_rate != 22050u) {
-        fail("mp7_set_sample_rate() did not take effect");
+        fail("pops_set_sample_rate() did not take effect");
     } else {
-        ok("mp7_set_sample_rate() takes effect");
+        ok("pops_set_sample_rate() takes effect");
     }
 
     printf("sine quadrant       : %u entries, %lu bytes\n",
-           (unsigned)POPPY_SINE_QUAD_SIZE,
-           (unsigned long)(POPPY_SINE_QUAD_SIZE * sizeof(int16_t)));
+            (unsigned)POPS_SINE_QUAD_SIZE,
+           (unsigned long)(POPS_SINE_QUAD_SIZE * sizeof(int16_t)));
     printf("sine table (shared) : %u entries, %lu bytes\n",
-           (unsigned)POPPY_SINE_TABLE_SIZE,
-           (unsigned long)(POPPY_SINE_TABLE_SIZE * sizeof(int16_t)));
+            (unsigned)POPS_SINE_TABLE_SIZE,
+           (unsigned long)(POPS_SINE_TABLE_SIZE * sizeof(int16_t)));
 
     free(ctx);
     return failures == 0 ? 0 : 1;
@@ -133,18 +133,18 @@ static int command_sine(void)
     int worst = 0;
     int fallback_mismatches = 0;
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
 
-    if (poppy_sine == 0) {
+    if (pops_sine == 0) {
         fail("mp7_init() did not rebuild the sine table");
         free(ctx);
         return 1;
     }
 
-    for (i = 0; i < POPPY_SINE_TABLE_SIZE; i++) {
-        double exact = 32767.0 * sin(2.0 * TEST_PI * (double)i / (double)POPPY_SINE_TABLE_SIZE);
+    for (i = 0; i < POPS_SINE_TABLE_SIZE; i++) {
+        double exact = 32767.0 * sin(2.0 * TEST_PI * (double)i / (double)POPS_SINE_TABLE_SIZE);
         int expected = (int)floor(exact + 0.5);
-        int got = (int)poppy_sine[i];
+         int got = (int)pops_sine[i];
         int error = got - expected;
 
         if (error < 0) {
@@ -160,14 +160,14 @@ static int command_sine(void)
             mismatches++;
         }
 
-        if ((int)poppy_sine_at(i) != got) {
+         if ((int)pops_sine_at(i) != got) {
             fallback_mismatches++;
         }
     }
 
     if (mismatches != 0) {
         printf("FAIL: %d of %u rebuilt entries differ (worst %d LSB)\n",
-               mismatches, (unsigned)POPPY_SINE_TABLE_SIZE, worst);
+               mismatches, (unsigned)POPS_SINE_TABLE_SIZE, worst);
         failures++;
     } else {
         ok("the rebuilt table matches sin(2*pi*i/1024) at all 1024 indices");
@@ -181,7 +181,7 @@ static int command_sine(void)
 
     /* Only the first quadrant lives in the image; the full period is built
      * once, on the first mp7_init(), and shared by every context. */
-    if ((POPPY_SINE_QUAD_SIZE * sizeof(int16_t)) != 514u) {
+    if ((POPS_SINE_QUAD_SIZE * sizeof(int16_t)) != 514u) {
         fail("the sine quadrant is not 514 bytes");
     } else {
         ok("the sine quadrant is 514 bytes (257 x int16)");
@@ -199,7 +199,7 @@ static int command_sine(void)
             double exact = 32767.0 * sin(2.0 * TEST_PI * (double)phase
                 / 268435456.0);
             int expected = (int)floor(exact + 0.5);
-            int got = (int)poppy_sine_interp(phase);
+             int got = (int)pops_sine_interp(phase);
             int error = got - expected;
 
             if (error < 0) {
@@ -217,7 +217,7 @@ static int command_sine(void)
             printf("ok  : sine interpolation tracks sin() (worst %d LSB)\n",
                 worst_interp);
         }
-        if ((int)poppy_sine_interp(256u << 18) != 32767) {
+         if ((int)pops_sine_interp(256u << 18) != 32767) {
             fail("sine interpolation is not exact at the peak");
         } else {
             ok("sine interpolation is exact at whole table indices");
@@ -225,7 +225,7 @@ static int command_sine(void)
     }
 
     {
-        const char *table = (const char *)poppy_sine;
+         const char *table = (const char *)pops_sine;
         const char *ctx_start = (const char *)ctx;
         const char *ctx_end = ctx_start + sizeof(struct mp7_context_s);
 
@@ -237,15 +237,15 @@ static int command_sine(void)
     }
 
     /* The rebuilt table must not depend on the context. */
-    if (ctx->sample_rate != MP7_DEFAULT_SAMPLE_RATE) {
+    if (ctx->sample_rate != POPS_DEFAULT_SAMPLE_RATE) {
         fail("the sample rate was not set");
     }
 
-    mp7_set_sample_rate(ctx, 22050);
+    pops_set_sample_rate(ctx, 22050);
     if (ctx->sample_rate != 22050u) {
-        fail("mp7_set_sample_rate() did not take effect");
+        fail("pops_set_sample_rate() did not take effect");
     } else {
-        ok("mp7_set_sample_rate() takes effect");
+        ok("pops_set_sample_rate() takes effect");
     }
 
     free(ctx);
@@ -261,7 +261,7 @@ static int command_gain(void)
     int64_t product;
 
     /* unity gain is the identity */
-    product = poppy_mul_q31_gain(2147483647, unity);
+     product = pops_mul_q31_gain(2147483647, unity);
     if (product != 2147483647) {
         printf("FAIL: unity gain changed the sample (%lld)\n", (long long)product);
         failures++;
@@ -270,7 +270,7 @@ static int command_gain(void)
     }
 
     /* half gain halves it */
-    product = poppy_mul_q31_gain(2147483647, unity / 2);
+     product = pops_mul_q31_gain(2147483647, unity / 2);
     if (product != 2147483647LL / 2) {
         printf("FAIL: half gain gave %lld\n", (long long)product);
         failures++;
@@ -279,21 +279,21 @@ static int command_gain(void)
     }
 
     /* zero gain silences it */
-    if (poppy_mul_q31_gain(2147483647, 0) != 0) {
+     if (pops_mul_q31_gain(2147483647, 0) != 0) {
         fail("zero gain did not silence the sample");
     } else {
         ok("zero gain silences a Q31 sample");
     }
 
     /* a negative sample stays negative */
-    if (poppy_mul_q31_gain(-2147483647, unity) > 0) {
+     if (pops_mul_q31_gain(-2147483647, unity) > 0) {
         fail("a negative sample changed sign");
     } else {
         ok("a negative sample keeps its sign");
     }
 
     /* 4.0 gain overflows a Q31 gain but must still be exact in 64 bits */
-    product = poppy_mul_q31_gain(2147483647, max_level);
+     product = pops_mul_q31_gain(2147483647, max_level);
     if (product != 2147483647LL * 4LL) {
         printf("FAIL: 4.0 gain gave %lld, expected %lld\n",
                (long long)product, 2147483647LL * 4LL);
@@ -308,7 +308,7 @@ static int command_gain(void)
 static int command_silence(const char *path)
 {
     struct mp7_context_s *ctx = context_new();
-    const uint32_t sample_rate = MP7_DEFAULT_SAMPLE_RATE;
+    const uint32_t sample_rate = POPS_DEFAULT_SAMPLE_RATE;
     size_t frames = (size_t)((TEST_SILENCE_SECONDS * (double)sample_rate) + 0.5);
     int16_t *buffer = (int16_t *)malloc(frames * 2u * sizeof(int16_t));
     size_t i;
@@ -323,7 +323,7 @@ static int command_silence(const char *path)
     memset(buffer, 0xA5, frames * 2u * sizeof(int16_t));
 
     mp7_init(ctx, sample_rate);
-    mp7_process(ctx, buffer, frames);
+    pops_process(ctx, buffer, frames);
 
     for (i = 0; i < frames * 2u; i++) {
         if (buffer[i] != 0) {
@@ -352,14 +352,14 @@ static int command_silence(const char *path)
 
 
 static void render_voice_i32(struct mp7_context_s *ctx,
-                             mp7_instr instr,
+                             pops_instr instr,
                              int32_t *out,
                              size_t frames,
                              size_t release_at)
 {
     size_t i;
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
     mp7_voice_trigger(&ctx->voices[instr]);
 
     for (i = 0; i < frames; i++) {
@@ -369,7 +369,7 @@ static void render_voice_i32(struct mp7_context_s *ctx,
             mp7_voice_release(&ctx->voices[instr]);
         }
         sample = mp7_voice_process(&ctx->voices[instr]);
-        out[i] = poppy_sat_i64_to_i32(sample);
+         out[i] = pops_sat_i64_to_i32(sample);
     }
 }
 
@@ -379,7 +379,7 @@ static int peak_i32(const int32_t *samples, size_t count)
     size_t i;
 
     for (i = 0; i < count; i++) {
-        int value = poppy_abs_i32(samples[i]);
+        int value = pops_abs_i32(samples[i]);
 
         if (value > peak) {
             peak = value;
@@ -401,15 +401,15 @@ static double rms_i32(const int32_t *samples, size_t count)
 
 static int command_instruments(const char *dir)
 {
-    static const mp7_instr instruments[MP7_INSTR_COUNT] = {
-        MP7_INSTR_BASS, MP7_INSTR_SNARE_1, MP7_INSTR_SNARE_2,
-        MP7_INSTR_SMALL_BONGO, MP7_INSTR_LARGE_BONGO, MP7_INSTR_CONGA,
-        MP7_INSTR_COWBELL, MP7_INSTR_CLAVES, MP7_INSTR_HIHAT,
-        MP7_INSTR_RIMSHOT, MP7_INSTR_CYMBAL_1, MP7_INSTR_CYMBAL_2,
-        MP7_INSTR_TAMBOURINE, MP7_INSTR_GUIRO, MP7_INSTR_QUIJADA
+    static const pops_instr instruments[POPS_INSTR_COUNT] = {
+        POPS_INSTR_BASS, POPS_INSTR_SNARE_1, POPS_INSTR_SNARE_2,
+        POPS_INSTR_SMALL_BONGO, POPS_INSTR_LARGE_BONGO, POPS_INSTR_CONGA,
+        POPS_INSTR_COWBELL, POPS_INSTR_CLAVES, POPS_INSTR_HIHAT,
+        POPS_INSTR_RIMSHOT, POPS_INSTR_CYMBAL_1, POPS_INSTR_CYMBAL_2,
+        POPS_INSTR_TAMBOURINE, POPS_INSTR_GUIRO, POPS_INSTR_QUIJADA
     };
     struct mp7_context_s *ctx = context_new();
-    const uint32_t sample_rate = MP7_DEFAULT_SAMPLE_RATE;
+    const uint32_t sample_rate = POPS_DEFAULT_SAMPLE_RATE;
     const size_t frames = (size_t)sample_rate;
     const size_t tail_frames = (size_t)(sample_rate / 20u);
     int32_t *mono = (int32_t *)malloc(frames * sizeof(int32_t));
@@ -424,14 +424,14 @@ static int command_instruments(const char *dir)
         return 1;
     }
 
-    for (i = 0; i < (unsigned int)MP7_INSTR_COUNT; i++) {
+    for (i = 0; i < (unsigned int)POPS_INSTR_COUNT; i++) {
         char path[512];
         size_t release_at = frames;
         int peak;
         int tail;
         size_t j;
 
-        if (instruments[i] == MP7_INSTR_GUIRO) {
+        if (instruments[i] == POPS_INSTR_GUIRO) {
             release_at = (size_t)(sample_rate / 5u);
         }
 
@@ -449,7 +449,7 @@ static int command_instruments(const char *dir)
         }
 
         for (j = 0; j < frames; j++) {
-            int16_t value = (int16_t)poppy_q31_to_q15(mono[j]);
+            int16_t value = (int16_t)pops_q31_to_q15(mono[j]);
 
             stereo[2u * j] = value;
             stereo[2u * j + 1u] = value;
@@ -509,9 +509,9 @@ static double correlation(const int32_t *a, const int32_t *b, size_t count)
 
 static int command_noise(void)
 {
-    static const mp7_instr noise[6] = {
-        MP7_INSTR_SNARE_1, MP7_INSTR_SNARE_2, MP7_INSTR_HIHAT,
-        MP7_INSTR_CYMBAL_1, MP7_INSTR_CYMBAL_2, MP7_INSTR_TAMBOURINE
+    static const pops_instr noise[6] = {
+        POPS_INSTR_SNARE_1, POPS_INSTR_SNARE_2, POPS_INSTR_HIHAT,
+        POPS_INSTR_CYMBAL_1, POPS_INSTR_CYMBAL_2, POPS_INSTR_TAMBOURINE
     };
     struct mp7_context_s *ctx = context_new();
     const size_t frames = 8192;
@@ -555,11 +555,11 @@ static int command_noise(void)
 
     /* The Hihat has no Highpass control; its high-pass is fixed at 1000 Hz. */
     {
-        struct poppy_biquad expected;
-        const struct poppy_biquad *actual = &ctx->voices[MP7_INSTR_HIHAT].highpass;
+        struct pops_biquad expected;
+         const struct pops_biquad *actual = &ctx->voices[POPS_INSTR_HIHAT].highpass;
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_biquad_set_highpass(&expected, 1000u, MP7_DEFAULT_SAMPLE_RATE);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+         pops_biquad_set_highpass(&expected, 1000u, POPS_DEFAULT_SAMPLE_RATE);
         if ((actual->b0 != expected.b0) || (actual->b1 != expected.b1) ||
             (actual->b2 != expected.b2) || (actual->a1 != expected.a1) ||
             (actual->a2 != expected.a2)) {
@@ -582,7 +582,7 @@ static int command_noise(void)
 static int command_guiro(void)
 {
     struct mp7_context_s *ctx = context_new();
-    const uint32_t sample_rate = MP7_DEFAULT_SAMPLE_RATE;
+    const uint32_t sample_rate = POPS_DEFAULT_SAMPLE_RATE;
     const size_t frames = (size_t)(sample_rate / 2u);
     const size_t late = (size_t)(sample_rate / 10u);
     int32_t *held = (int32_t *)malloc(frames * sizeof(int32_t));
@@ -598,8 +598,8 @@ static int command_guiro(void)
         return 1;
     }
 
-    render_voice_i32(ctx, MP7_INSTR_GUIRO, held, frames, frames);
-    render_voice_i32(ctx, MP7_INSTR_GUIRO, released, frames, (size_t)(sample_rate / 10u));
+    render_voice_i32(ctx, POPS_INSTR_GUIRO, held, frames, frames);
+    render_voice_i32(ctx, POPS_INSTR_GUIRO, released, frames, (size_t)(sample_rate / 10u));
 
     held_rms = rms_i32(held + (frames - late), late);
     released_rms = rms_i32(released + (frames - late), late);
@@ -658,7 +658,7 @@ static int command_pattern(void)
     static const unsigned int short_loop[5] = { 0u, 8u, 10u, 15u, 18u };
     static const unsigned int compound_rhythms[3] = { 8u, 15u, 18u };
     struct mp7_context_s *ctx = context_new();
-    const uint32_t sample_rate = MP7_DEFAULT_SAMPLE_RATE;
+    const uint32_t sample_rate = POPS_DEFAULT_SAMPLE_RATE;
     unsigned int rhythm;
     unsigned int i;
 
@@ -668,7 +668,7 @@ static int command_pattern(void)
      * twelve rhythm instrument bits, the five short loops enable 48 columns,
      * everything else enables all 64, and the compound grid is the mask of
      * the three shuffle rhythms. */
-    for (rhythm = 0u; rhythm < (unsigned int)MP7_RHYTHM_COUNT; rhythm++) {
+    for (rhythm = 0u; rhythm < (unsigned int)POPS_RHYTHM_COUNT; rhythm++) {
         const struct mp7_factory_rhythm *pattern = &mp7_factory_rhythms[rhythm];
         int expect_short = 0;
         int expect_compound = 0;
@@ -708,23 +708,23 @@ static int command_pattern(void)
     }
 
     /* Check the enable masks by position, not just by their popcount. */
-    if ((mp7_factory_rhythms[MP7_RHYTHM_WALTZ].enable !=
+    if ((mp7_factory_rhythms[POPS_RHYTHM_WALTZ].enable !=
          UINT64_C(0xFF0F0FFFFF0F0FFF)) ||
-        (mp7_factory_rhythms[MP7_RHYTHM_MARCH_2_4].enable !=
+        (mp7_factory_rhythms[POPS_RHYTHM_MARCH_2_4].enable !=
          UINT64_C(0x3F3F3F3F3F3F3F3F)) ||
-        (mp7_factory_rhythms[MP7_RHYTHM_SAMBA].enable != ~(uint64_t)0)) {
+        (mp7_factory_rhythms[POPS_RHYTHM_SAMBA].enable != ~(uint64_t)0)) {
         fail("the time-signature enable masks are wrong");
     }
 
-    if ((mp7_factory_rhythms[MP7_RHYTHM_WALTZ].notes_period !=
+    if ((mp7_factory_rhythms[POPS_RHYTHM_WALTZ].notes_period !=
          MP7_PATTERN_HALF_STEPS) ||
-        (mp7_factory_rhythms[MP7_RHYTHM_SAMBA].notes_period !=
+        (mp7_factory_rhythms[POPS_RHYTHM_SAMBA].notes_period !=
          MP7_PATTERN_STEPS) ||
-        (mp7_factory_rhythms[MP7_RHYTHM_MARCH_2_4].notes_period !=
+        (mp7_factory_rhythms[POPS_RHYTHM_MARCH_2_4].notes_period !=
          MP7_PATTERN_QUARTER_STEPS) ||
-        (mp7_factory_rhythms[MP7_RHYTHM_SLOW_ROCK].notes_period !=
+        (mp7_factory_rhythms[POPS_RHYTHM_SLOW_ROCK].notes_period !=
          MP7_PATTERN_QUARTER_STEPS) ||
-        (mp7_factory_rhythms[MP7_RHYTHM_MARCH_6_8].notes_period !=
+        (mp7_factory_rhythms[POPS_RHYTHM_MARCH_6_8].notes_period !=
          MP7_PATTERN_QUARTER_STEPS)) {
         fail("the stored note periods are not marked correctly");
     }
@@ -749,13 +749,13 @@ static int command_pattern(void)
             uint16_t expect = 0u;
 
             if (tambourine[column] == 'X') {
-                expect |= (uint16_t)(1u << MP7_INSTR_TAMBOURINE);
+                expect |= (uint16_t)(1u << POPS_INSTR_TAMBOURINE);
             }
             if (guiro[column] == 'X') {
-                expect |= (uint16_t)(1u << MP7_INSTR_GUIRO);
+                expect |= (uint16_t)(1u << POPS_INSTR_GUIRO);
             }
             if (quijada[column] == 'X') {
-                expect |= (uint16_t)(1u << MP7_INSTR_QUIJADA);
+                expect |= (uint16_t)(1u << POPS_INSTR_QUIJADA);
             }
             if (percussion_note(column) != expect) {
                 printf("FAIL: the shared percussion differs on column %u\n",
@@ -765,7 +765,7 @@ static int command_pattern(void)
             }
         }
 
-        for (rhythm = 0u; rhythm < (unsigned int)MP7_RHYTHM_COUNT; rhythm++) {
+        for (rhythm = 0u; rhythm < (unsigned int)POPS_RHYTHM_COUNT; rhythm++) {
             const struct mp7_factory_rhythm *pattern = &mp7_factory_rhythms[rhythm];
 
             for (column = 0u; column < MP7_PATTERN_STEPS; column++) {
@@ -786,14 +786,14 @@ static int command_pattern(void)
 
     /* Combination: OR the notes, AND the enable masks, and the grid of the
      * selection follows the masks of the patterns in it. */
-    mp7_pattern_combine(ctx, (uint32_t)1u << MP7_RHYTHM_ROCK_1);
+    mp7_pattern_combine(ctx, (uint32_t)1u << POPS_RHYTHM_ROCK_1);
     if (ctx->sequencer.enable != ~(uint64_t)0) {
         fail("Rock 1 on its own does not enable all 64 columns");
     }
     if (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_STRAIGHT) {
         fail("Rock 1 is not on the straight grid");
     }
-    if ((ctx->sequencer.notes[12] & (1u << MP7_INSTR_BASS)) == 0u) {
+    if ((ctx->sequencer.notes[12] & (1u << POPS_INSTR_BASS)) == 0u) {
         fail("Rock 1 lost its Base hit at column 12");
     }
 
@@ -801,12 +801,12 @@ static int command_pattern(void)
      * columns, with the repetitions of the stored period already applied
      * and the shared percussion layer merged into it. */
     {
-        struct mp7_pattern_view view;
+        struct pops_pattern_view view;
         unsigned int column;
         int bad = 0;
 
-        mp7_get_selection_pattern(ctx, MP7_BANK_A,
-                                   mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1),
+        pops_get_selection_pattern(ctx, POPS_BANK_A,
+                                   pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1),
                                    &view);
         for (column = 0u; column < MP7_PATTERN_STEPS; column++) {
             if (view.notes[column] != ctx->sequencer.notes[column]) {
@@ -841,22 +841,22 @@ static int command_pattern(void)
     }
 
     mp7_pattern_combine(ctx,
-                        ((uint32_t)1u << MP7_RHYTHM_ROCK_1) |
-                        ((uint32_t)1u << MP7_RHYTHM_WALTZ));
-    if (ctx->sequencer.enable != pattern_enable_mask(MP7_RHYTHM_WALTZ)) {
+                        ((uint32_t)1u << POPS_RHYTHM_ROCK_1) |
+                        ((uint32_t)1u << POPS_RHYTHM_WALTZ));
+    if (ctx->sequencer.enable != pattern_enable_mask(POPS_RHYTHM_WALTZ)) {
         fail("Rock 1 + Waltz does not use the Waltz enable mask");
     }
     if (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_STRAIGHT) {
         fail("Rock 1 + Waltz is not on the straight grid");
     }
-    if ((ctx->sequencer.notes[24] & (1u << MP7_INSTR_SNARE_1)) == 0u) {
+    if ((ctx->sequencer.notes[24] & (1u << POPS_INSTR_SNARE_1)) == 0u) {
         fail("Rock 1 + Waltz did not OR the Snare 1 hit at column 24");
     }
 
     mp7_pattern_combine(ctx,
-                        ((uint32_t)1u << MP7_RHYTHM_ROCK_1) |
-                        ((uint32_t)1u << MP7_RHYTHM_MARCH_6_8));
-    if (ctx->sequencer.enable != pattern_enable_mask(MP7_RHYTHM_MARCH_6_8)) {
+                        ((uint32_t)1u << POPS_RHYTHM_ROCK_1) |
+                        ((uint32_t)1u << POPS_RHYTHM_MARCH_6_8));
+    if (ctx->sequencer.enable != pattern_enable_mask(POPS_RHYTHM_MARCH_6_8)) {
         fail("Rock 1 + March 6/8 does not use the March enable mask");
     }
     if (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_COMPOUND) {
@@ -872,7 +872,7 @@ static int command_pattern(void)
     /* Timing: Rock 1 at 120 BPM has a 22050-sample beat, and a straight beat
      * holds eight columns. The Base row is X...........X...X... so the first
      * hit gaps are 12 and 4 columns. */
-    mp7_pattern_combine(ctx, (uint32_t)1u << MP7_RHYTHM_ROCK_1);
+    mp7_pattern_combine(ctx, (uint32_t)1u << POPS_RHYTHM_ROCK_1);
     mp7_pattern_set_tempo(ctx, 120u);
     mp7_pattern_reset(ctx);
     if (ctx->sequencer.beat_samples != 22050u) {
@@ -891,9 +891,9 @@ static int command_pattern(void)
         size_t t;
 
         for (t = 0u; t < total; t++) {
-            ctx->voices[MP7_INSTR_BASS].active = 0;
+            ctx->voices[POPS_INSTR_BASS].active = 0;
             mp7_pattern_tick(ctx);
-            if (ctx->voices[MP7_INSTR_BASS].active != 0u) {
+            if (ctx->voices[POPS_INSTR_BASS].active != 0u) {
                 if (trigger_count < 16u) {
                     trigger_times[trigger_count] = t;
                 }
@@ -938,7 +938,7 @@ static int command_pattern(void)
      * compound pattern's hits land a beat apart. The March 6/8 Base row hits
      * every 8 columns and the compound mask enables 6 of every 8, so the hits
      * are 6 columns apart on the grid: the disabled columns take no time. */
-    mp7_pattern_combine(ctx, (uint32_t)1u << MP7_RHYTHM_MARCH_6_8);
+    mp7_pattern_combine(ctx, (uint32_t)1u << POPS_RHYTHM_MARCH_6_8);
     mp7_pattern_set_tempo(ctx, 120u);
     mp7_pattern_reset(ctx);
     {
@@ -949,9 +949,9 @@ static int command_pattern(void)
         size_t t;
 
         for (t = 0u; t < total; t++) {
-            ctx->voices[MP7_INSTR_BASS].active = 0;
+            ctx->voices[POPS_INSTR_BASS].active = 0;
             mp7_pattern_tick(ctx);
-            if (ctx->voices[MP7_INSTR_BASS].active != 0u) {
+            if (ctx->voices[POPS_INSTR_BASS].active != 0u) {
                 if (trigger_count < 16u) {
                     trigger_times[trigger_count] = t;
                 }
@@ -997,7 +997,7 @@ static int command_pattern(void)
     /* Guiro gate: the shared row starts with XXXX and then rests, so the
      * gate must stay open across columns 0..3 and close on column 4. */
     mp7_init(ctx, sample_rate);
-    mp7_pattern_combine(ctx, (uint32_t)1u << MP7_RHYTHM_ROCK_1);
+    mp7_pattern_combine(ctx, (uint32_t)1u << POPS_RHYTHM_ROCK_1);
     mp7_pattern_set_tempo(ctx, 120u);
     {
         const size_t column_samples = (size_t)ctx->sequencer.beat_samples / 8u + 1u;
@@ -1030,13 +1030,13 @@ static int command_pattern(void)
      * column boundary. March 2/4 disables columns 6 and 7 and hits Snare 2
      * on column 8. */
     mp7_init(ctx, sample_rate);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     ctx->sequencer.column = 6u;
     ctx->sequencer.column_fired = 0u;
     ctx->sequencer.column_pos = 0u;
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_MARCH_2_4));
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_MARCH_2_4));
     mp7_pattern_tick(ctx);
-    if ((ctx->voices[MP7_INSTR_SNARE_2].active == 0u) ||
+    if ((ctx->voices[POPS_INSTR_SNARE_2].active == 0u) ||
         (ctx->sequencer.column != 8u)) {
         fail("the sequencer idled on a column the new grid disables");
     } else {
@@ -1050,40 +1050,40 @@ static int command_pattern(void)
         int bad = 0;
         unsigned int timesig;
 
-        for (timesig = 0u; timesig < (unsigned int)MP7_TIMESIG_COUNT; timesig++) {
-            mp7_timesig found = mp7_timesig_of_mask(
-                mp7_timesig_enable_mask((mp7_timesig)timesig));
+        for (timesig = 0u; timesig < (unsigned int)POPS_TIMESIG_COUNT; timesig++) {
+            pops_timesig found = pops_timesig_of_mask(
+                pops_timesig_enable_mask((pops_timesig)timesig));
 
-            if ((found != (mp7_timesig)timesig) &&
-                !((found == MP7_TIMESIG_2_4) &&
-                  (timesig == (unsigned int)MP7_TIMESIG_6_8T))) {
+            if ((found != (pops_timesig)timesig) &&
+                !((found == POPS_TIMESIG_2_4) &&
+                  (timesig == (unsigned int)POPS_TIMESIG_6_8T))) {
                 bad = 1;
                 break;
             }
         }
-        if (mp7_timesig_of_mask(UINT64_C(0x0F0F0F0F0F0F0F0F)) !=
-            MP7_TIMESIG_NONE) {
+        if (pops_timesig_of_mask(UINT64_C(0x0F0F0F0F0F0F0F0F)) !=
+            POPS_TIMESIG_NONE) {
             bad = 1;
         }
         if (bad) {
-            fail("mp7_timesig_of_mask() is not the inverse of the mask");
+            fail("pops_timesig_of_mask() is not the inverse of the mask");
         } else {
-            ok("mp7_timesig_of_mask() names the signature of a mask");
+            ok("pops_timesig_of_mask() names the signature of a mask");
         }
     }
 
     /* The view of a selection is the grid the sequencer plays, for one
      * rhythm and for several of them. */
     {
-        struct mp7_pattern_view view;
+        struct pops_pattern_view view;
         unsigned int column;
         int bad = 0;
 
         mp7_init(ctx, sample_rate);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
-        mp7_get_selection_pattern(ctx, MP7_BANK_A,
-                                   mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1),
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
+        pops_get_selection_pattern(ctx, POPS_BANK_A,
+                                   pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1),
                                    &view);
         for (column = 0u; column < MP7_PATTERN_STEPS; column++) {
             if (view.notes[column] != ctx->sequencer.notes[column]) {
@@ -1101,12 +1101,12 @@ static int command_pattern(void)
          * grid follows the masks of the rhythms in it. Rock 1 is straight
          * and March 2/4 is compound, so the selection plays compound even
          * though its combined mask is the compound one of March 2/4. */
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_MARCH_2_4));
-        mp7_get_selection_pattern(ctx, MP7_BANK_A,
-                                   mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-                                   mp7_rhythm_button_bit(MP7_RHYTHM_MARCH_2_4),
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_MARCH_2_4));
+        pops_get_selection_pattern(ctx, POPS_BANK_A,
+                                   pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+                                   pops_rhythm_button_bit(POPS_RHYTHM_MARCH_2_4),
                                    &view);
         for (column = 0u; column < MP7_PATTERN_STEPS; column++) {
             if (view.notes[column] != ctx->sequencer.notes[column]) {
@@ -1126,7 +1126,7 @@ static int command_pattern(void)
         /* Rock 1 and the Waltz carry different signatures, so the selection
          * is a mixed one even though the combined mask is the one of the
          * Waltz. */
-        if (view.timesig != MP7_TIMESIG_NONE) {
+        if (view.timesig != POPS_TIMESIG_NONE) {
             fail("a selection of different signatures is not mixed");
             bad = 1;
         }
@@ -1141,18 +1141,18 @@ static int command_pattern(void)
     /* The view of a selection does not touch the sequencer: it can be asked
      * for a selection that is not playing. */
     {
-        struct mp7_pattern_view view;
+        struct pops_pattern_view view;
         uint16_t before[MP7_PATTERN_STEPS];
         unsigned int column;
         int bad = 0;
 
         mp7_init(ctx, sample_rate);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
         memcpy(before, ctx->sequencer.notes, sizeof(before));
 
-        mp7_get_selection_pattern(ctx, MP7_BANK_A,
-                                   mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ),
+        pops_get_selection_pattern(ctx, POPS_BANK_A,
+                                   pops_rhythm_button_bit(POPS_RHYTHM_WALTZ),
                                    &view);
         for (column = 0u; column < MP7_PATTERN_STEPS; column++) {
             if (ctx->sequencer.notes[column] != before[column]) {
@@ -1171,12 +1171,12 @@ static int command_pattern(void)
     return failures == 0 ? 0 : 1;
 }
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
 
 /* The largest pole magnitude of a biquad. A filter is stable only while
  * this stays below 1: at 1 the poles sit on the unit circle and the filter
  * rings without decaying, and above it the state diverges. */
-static double biquad_pole_radius(const struct poppy_biquad *filter)
+static double biquad_pole_radius(const struct pops_biquad *filter)
 {
     double a1 = (double)filter->a1 / 1073741824.0;
     double a2 = (double)filter->a2 / 1073741824.0;
@@ -1197,9 +1197,9 @@ static double biquad_pole_radius(const struct poppy_biquad *filter)
 }
 
 /* A user pattern with one instrument mask on every column of the cycle. */
-static void fill_user_pattern(struct mp7_user_pattern *pattern,
+static void fill_user_pattern(struct pops_user_pattern *pattern,
                               uint16_t mask,
-                              mp7_timesig timesig)
+                              pops_timesig timesig)
 {
     unsigned int column;
 
@@ -1214,7 +1214,7 @@ static void fill_user_pattern(struct mp7_user_pattern *pattern,
 /* The combined grid of a single user slot: the slot's own columns, with
  * nothing else added to them. */
 static int user_grid_matches(const struct mp7_sequencer *seq,
-                              const struct mp7_user_pattern *pattern)
+                              const struct pops_user_pattern *pattern)
 {
     unsigned int column;
 
@@ -1249,23 +1249,23 @@ static int factory_grid_matches(const struct mp7_sequencer *seq,
 static int command_user(void)
 {
     struct mp7_context_s *ctx = context_new();
-    const uint32_t sample_rate = MP7_DEFAULT_SAMPLE_RATE;
-    struct mp7_user_pattern pattern;
-    struct mp7_user_pattern readback;
+    const uint32_t sample_rate = POPS_DEFAULT_SAMPLE_RATE;
+    struct pops_user_pattern pattern;
+    struct pops_user_pattern readback;
     unsigned int column;
 
     mp7_init(ctx, sample_rate);
 
     /* A pattern survives the round trip through a slot. */
-    fill_user_pattern(&pattern, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_4_4);
-    if (!mp7_set_user_pattern(ctx, 0u, &pattern)) {
-        fail("mp7_set_user_pattern() rejected a valid slot");
-    } else if (!mp7_get_user_pattern(ctx, 0u, &readback)) {
-        fail("mp7_get_user_pattern() did not return a stored pattern");
+    fill_user_pattern(&pattern, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_4_4);
+    if (!pops_set_user_pattern(ctx, 0u, &pattern)) {
+        fail("pops_set_user_pattern() rejected a valid slot");
+    } else if (!pops_get_user_pattern(ctx, 0u, &readback)) {
+        fail("pops_get_user_pattern() did not return a stored pattern");
     } else {
         int same = (readback.timesig == pattern.timesig);
 
-        for (column = 0u; same && (column < MP7_USER_PATTERN_COLUMNS); column++) {
+        for (column = 0u; same && (column < POPS_USER_PATTERN_COLUMNS); column++) {
             if (readback.notes[column] != pattern.notes[column]) {
                 same = 0;
             }
@@ -1279,11 +1279,11 @@ static int command_user(void)
     }
 
     /* A bad slot, a bad context and a null destination. */
-    if (mp7_set_user_pattern(ctx, MP7_USER_PATTERN_COUNT, &pattern) ||
-        mp7_set_user_pattern(0, 0u, &pattern) ||
-        mp7_get_user_pattern(ctx, MP7_USER_PATTERN_COUNT, &readback) ||
-        mp7_get_user_pattern(0, 0u, &readback) ||
-        mp7_get_user_pattern(ctx, 0u, 0)) {
+    if (pops_set_user_pattern(ctx, POPS_USER_PATTERN_COUNT, &pattern) ||
+        pops_set_user_pattern(0, 0u, &pattern) ||
+        pops_get_user_pattern(ctx, POPS_USER_PATTERN_COUNT, &readback) ||
+        pops_get_user_pattern(0, 0u, &readback) ||
+        pops_get_user_pattern(ctx, 0u, 0)) {
         fail("the user pattern API accepted an invalid argument");
     } else {
         ok("the user pattern API rejects invalid arguments");
@@ -1292,14 +1292,14 @@ static int command_user(void)
     /* An unknown time signature is refused, and the slot keeps the pattern
      * it had. */
     {
-        struct mp7_user_pattern unknown;
+        struct pops_user_pattern unknown;
 
-        fill_user_pattern(&unknown, (uint16_t)(1u << MP7_INSTR_SNARE_1),
-                          (mp7_timesig)MP7_TIMESIG_COUNT);
-        if (mp7_set_user_pattern(ctx, 0u, &unknown)) {
-            fail("mp7_set_user_pattern() accepted an unknown time signature");
-        } else if (!mp7_get_user_pattern(ctx, 0u, &readback) ||
-                   (readback.timesig != MP7_TIMESIG_4_4)) {
+        fill_user_pattern(&unknown, (uint16_t)(1u << POPS_INSTR_SNARE_1),
+                          (pops_timesig)POPS_TIMESIG_COUNT);
+        if (pops_set_user_pattern(ctx, 0u, &unknown)) {
+            fail("pops_set_user_pattern() accepted an unknown time signature");
+        } else if (!pops_get_user_pattern(ctx, 0u, &readback) ||
+                   (readback.timesig != POPS_TIMESIG_4_4)) {
             fail("an unknown time signature changed the slot");
         } else {
             ok("the user pattern API rejects an unknown time signature");
@@ -1307,9 +1307,9 @@ static int command_user(void)
     }
 
     /* A null pattern empties the slot, and an empty slot is not a pattern. */
-    if (!mp7_set_user_pattern(ctx, 0u, 0)) {
-        fail("mp7_set_user_pattern() rejected a null pattern");
-    } else if (mp7_get_user_pattern(ctx, 0u, &readback)) {
+    if (!pops_set_user_pattern(ctx, 0u, 0)) {
+        fail("pops_set_user_pattern() rejected a null pattern");
+    } else if (pops_get_user_pattern(ctx, 0u, &readback)) {
         fail("an emptied slot still returns a pattern");
     } else {
         ok("a null pattern empties the slot");
@@ -1317,21 +1317,21 @@ static int command_user(void)
 
     /* The preset source ignores the user slots. Button 0 is the Waltz, so
      * the selection points at slot 0 in the user source. */
-    fill_user_pattern(&pattern, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_4_4);
-    mp7_set_user_pattern(ctx, 0u, &pattern);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
-    if (mp7_get_pattern_source(ctx) != MP7_PATTERN_SOURCE_PRESET) {
+    fill_user_pattern(&pattern, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_4_4);
+    pops_set_user_pattern(ctx, 0u, &pattern);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+    if (pops_get_pattern_source(ctx) != POPS_PATTERN_SOURCE_PRESET) {
         fail("the preset source is not the default");
     } else if (!factory_grid_matches(&ctx->sequencer,
-                                     &mp7_factory_rhythms[MP7_RHYTHM_WALTZ])) {
+                                     &mp7_factory_rhythms[POPS_RHYTHM_WALTZ])) {
         fail("the preset source does not play the factory rhythm");
     } else {
         ok("the preset source plays the factory rhythms, not the user slots");
     }
 
     /* The switch re-reads the current selection against the user slots. */
-    mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
-    if (mp7_get_pattern_source(ctx) != MP7_PATTERN_SOURCE_USER) {
+    pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
+    if (pops_get_pattern_source(ctx) != POPS_PATTERN_SOURCE_USER) {
         fail("the pattern source did not switch to the user slots");
     } else if (!user_grid_matches(&ctx->sequencer, &pattern)) {
         fail("the user source does not play the user slot");
@@ -1342,13 +1342,13 @@ static int command_user(void)
     /* The view of one pattern follows the source: the user slot while the
      * user source is selected, the factory rhythm in the preset source. */
     {
-        struct mp7_pattern_view view;
+        struct pops_pattern_view view;
         unsigned int column;
         int bad = 0;
 
-        mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
-        mp7_get_selection_pattern(ctx, MP7_BANK_A,
-                                   mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ),
+        pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
+        pops_get_selection_pattern(ctx, POPS_BANK_A,
+                                   pops_rhythm_button_bit(POPS_RHYTHM_WALTZ),
                                    &view);
         for (column = 0u; column < MP7_PATTERN_STEPS; column++) {
             if (view.notes[column] != pattern.notes[column]) {
@@ -1356,7 +1356,7 @@ static int command_user(void)
                 break;
             }
         }
-        if (view.enable != mp7_timesig_enable_mask(pattern.timesig)) {
+        if (view.enable != pops_timesig_enable_mask(pattern.timesig)) {
             bad = 1;
         }
         if (view.timesig != pattern.timesig) {
@@ -1372,22 +1372,22 @@ static int command_user(void)
     /* A user pattern is complete: the shared percussion layer is not added
      * to it, and its own percussion lines play. */
     {
-        struct mp7_user_pattern percussion;
+        struct pops_user_pattern percussion;
 
         fill_user_pattern(&percussion,
-                          (uint16_t)(1u << MP7_INSTR_TAMBOURINE),
-                          MP7_TIMESIG_4_4);
-        mp7_set_user_pattern(ctx, 1u, &percussion);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_SAMBA));
+                          (uint16_t)(1u << POPS_INSTR_TAMBOURINE),
+                          POPS_TIMESIG_4_4);
+        pops_set_user_pattern(ctx, 1u, &percussion);
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_SAMBA));
 
         if ((ctx->sequencer.notes[0] &
-             (uint16_t)~((uint16_t)(1u << MP7_INSTR_TAMBOURINE) |
-                          (uint16_t)(1u << MP7_INSTR_BASS))) != 0u) {
+             (uint16_t)~((uint16_t)(1u << POPS_INSTR_TAMBOURINE) |
+                          (uint16_t)(1u << POPS_INSTR_BASS))) != 0u) {
             fail("a user pattern carries the shared percussion layer");
         } else if ((ctx->sequencer.notes[0] &
-                    (uint16_t)(1u << MP7_INSTR_TAMBOURINE)) == 0u) {
+                    (uint16_t)(1u << POPS_INSTR_TAMBOURINE)) == 0u) {
             fail("a user pattern does not play its own percussion line");
         } else {
             ok("a user pattern plays its own percussion, not the shared layer");
@@ -1397,17 +1397,17 @@ static int command_user(void)
     /* Two user slots combine like two factory rhythms: the notes are OR-ed
      * and the enable masks are AND-ed. */
     {
-        struct mp7_user_pattern snare;
+        struct pops_user_pattern snare;
 
-        fill_user_pattern(&snare, (uint16_t)(1u << MP7_INSTR_SNARE_1), MP7_TIMESIG_3_4);
-        mp7_set_user_pattern(ctx, 2u, &snare);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_MAMBO));
+        fill_user_pattern(&snare, (uint16_t)(1u << POPS_INSTR_SNARE_1), POPS_TIMESIG_3_4);
+        pops_set_user_pattern(ctx, 2u, &snare);
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_MAMBO));
 
         if ((ctx->sequencer.enable != UINT64_C(0xFF0F0FFFFF0F0FFF)) ||
-            ((ctx->sequencer.notes[0] & (uint16_t)(1u << MP7_INSTR_SNARE_1)) == 0u) ||
-            ((ctx->sequencer.notes[0] & (uint16_t)(1u << MP7_INSTR_BASS)) == 0u)) {
+            ((ctx->sequencer.notes[0] & (uint16_t)(1u << POPS_INSTR_SNARE_1)) == 0u) ||
+            ((ctx->sequencer.notes[0] & (uint16_t)(1u << POPS_INSTR_BASS)) == 0u)) {
             fail("two user slots do not combine like two factory rhythms");
         } else {
             ok("two user slots combine like two factory rhythms");
@@ -1416,8 +1416,8 @@ static int command_user(void)
 
     /* An empty slot plays nothing and disables no column. */
     mp7_init(ctx, sample_rate);
-    mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
+    pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
     if ((ctx->sequencer.enable != ~(uint64_t)0) ||
         (ctx->sequencer.notes[0] != 0u)) {
         fail("an empty user slot is not a silent pattern");
@@ -1427,8 +1427,8 @@ static int command_user(void)
 
     /* With no button pressed the user source keeps the transport running
      * and stays silent: the shared layer belongs to the preset source. */
-    mp7_select_rhythm(ctx, MP7_BANK_A, 0u);
-    if (!mp7_rhythm_running(ctx) || (ctx->sequencer.enable != ~(uint64_t)0)) {
+    pops_select_rhythm(ctx, POPS_BANK_A, 0u);
+    if (!pops_rhythm_running(ctx) || (ctx->sequencer.enable != ~(uint64_t)0)) {
         fail("the user source stops the transport when no button is pressed");
     } else {
         int silent = 1;
@@ -1449,29 +1449,29 @@ static int command_user(void)
     /* The grid of a user pattern follows its time signature and reaches the
      * sequencer. */
     {
-        struct mp7_user_pattern shuffle;
-        struct mp7_user_pattern straight;
+        struct pops_user_pattern shuffle;
+        struct pops_user_pattern straight;
 
-        fill_user_pattern(&shuffle, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_2_4);
-        mp7_set_user_pattern(ctx, 3u, &shuffle);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_SAMBA) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_MAMBO) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_RUMBA));
+        fill_user_pattern(&shuffle, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_2_4);
+        pops_set_user_pattern(ctx, 3u, &shuffle);
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_SAMBA) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_MAMBO) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_RUMBA));
         if (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_COMPOUND) {
             fail("the grid of a user pattern was lost");
         } else {
             ok("the grid of a user pattern reaches the sequencer");
         }
 
-        fill_user_pattern(&straight, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_4_4);
-        mp7_set_user_pattern(ctx, 4u, &straight);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_SAMBA) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_MAMBO) |
-                          mp7_rhythm_button_bit(MP7_RHYTHM_RUMBA));
+        fill_user_pattern(&straight, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_4_4);
+        pops_set_user_pattern(ctx, 4u, &straight);
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_SAMBA) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_MAMBO) |
+                          pops_rhythm_button_bit(POPS_RHYTHM_RUMBA));
         if (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_COMPOUND) {
             fail("a compound pattern in the selection was straightened");
         } else {
@@ -1481,17 +1481,17 @@ static int command_user(void)
 
     /* A user pattern plays on the mask of its time signature. */
     {
-        struct mp7_user_pattern metered;
+        struct pops_user_pattern metered;
 
         mp7_init(ctx, sample_rate);
-        mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
+        pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
 
-        fill_user_pattern(&metered, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_7_4);
-        mp7_set_user_pattern(ctx, 0u, &metered);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
+        fill_user_pattern(&metered, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_7_4);
+        pops_set_user_pattern(ctx, 0u, &metered);
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
 
-        if (ctx->sequencer.enable != mp7_timesig_enable_mask(MP7_TIMESIG_7_4)) {
+        if (ctx->sequencer.enable != pops_timesig_enable_mask(POPS_TIMESIG_7_4)) {
             fail("a user pattern does not play on the mask of its signature");
         } else if (ctx->sequencer.enable != UINT64_C(0x00FFFFFFFFFFFFFF)) {
             fail("the 7/4 mask is wrong");
@@ -1504,22 +1504,22 @@ static int command_user(void)
      * triplet feel and the loop is slower than the same columns straight. The
      * 7/4 signature has no such grouping and stays straight. */
     {
-        struct mp7_user_pattern fives;
-        struct mp7_user_pattern sevens;
+        struct pops_user_pattern fives;
+        struct pops_user_pattern sevens;
 
         mp7_init(ctx, sample_rate);
-        mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
+        pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
 
-        fill_user_pattern(&fives, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_5_4T);
-        mp7_set_user_pattern(ctx, 0u, &fives);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
+        fill_user_pattern(&fives, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_5_4T);
+        pops_set_user_pattern(ctx, 0u, &fives);
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
         if (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_COMPOUND) {
             fail("a 5/4 pattern is not on the compound grid");
         }
 
-        fill_user_pattern(&sevens, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_7_4);
-        mp7_set_user_pattern(ctx, 0u, &sevens);
+        fill_user_pattern(&sevens, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_7_4);
+        pops_set_user_pattern(ctx, 0u, &sevens);
         if (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_STRAIGHT) {
             fail("a 7/4 pattern did not stay on the straight grid");
         } else {
@@ -1529,17 +1529,17 @@ static int command_user(void)
 
     /* The switch keeps the playhead and cancels a pending change. */
     mp7_init(ctx, sample_rate);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     mp7_pattern_tick(ctx);
-    mp7_select_rhythm(ctx, MP7_BANK_B,
-                      mp7_rhythm_button_bit(MP7_RHYTHM_JAZZ_WALTZ) |
-                      MP7_APPLY_NEXT_CYCLE);
+    pops_select_rhythm(ctx, POPS_BANK_B,
+                      pops_rhythm_button_bit(POPS_RHYTHM_JAZZ_WALTZ) |
+                      POPS_APPLY_NEXT_CYCLE);
     {
         uint8_t column = ctx->sequencer.column;
-        struct mp7_panel_state state;
+        struct pops_panel_state state;
 
-        mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
-        mp7_get_panel_state(ctx, &state);
+        pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
+        pops_get_panel_state(ctx, &state);
         if (ctx->sequencer.column != column) {
             fail("the source switch moved the playhead");
         } else if (state.pending) {
@@ -1555,30 +1555,30 @@ static int command_user(void)
      * the time signature, and a slot that was emptied with a null pattern:
      * it must stay empty across the reset. */
     {
-        struct mp7_user_pattern low;
-        struct mp7_user_pattern mid;
-        struct mp7_user_pattern high;
+        struct pops_user_pattern low;
+        struct pops_user_pattern mid;
+        struct pops_user_pattern high;
         int same;
 
-        fill_user_pattern(&low, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_4_4);
-        fill_user_pattern(&mid, (uint16_t)(1u << MP7_INSTR_SNARE_1), MP7_TIMESIG_7_4);
-        fill_user_pattern(&high, (uint16_t)(1u << MP7_INSTR_HIHAT), MP7_TIMESIG_6_8T);
+        fill_user_pattern(&low, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_4_4);
+        fill_user_pattern(&mid, (uint16_t)(1u << POPS_INSTR_SNARE_1), POPS_TIMESIG_7_4);
+        fill_user_pattern(&high, (uint16_t)(1u << POPS_INSTR_HIHAT), POPS_TIMESIG_6_8T);
 
-        mp7_set_user_pattern(ctx, 0u, &low);
-        mp7_set_user_pattern(ctx, 4u, &mid);
-        mp7_set_user_pattern(ctx, MP7_USER_PATTERN_COUNT - 1u, &high);
-        mp7_set_user_pattern(ctx, 1u, 0);
+        pops_set_user_pattern(ctx, 0u, &low);
+        pops_set_user_pattern(ctx, 4u, &mid);
+        pops_set_user_pattern(ctx, POPS_USER_PATTERN_COUNT - 1u, &high);
+        pops_set_user_pattern(ctx, 1u, 0);
 
-        mp7_reset(ctx);
+        pops_reset(ctx);
 
-        if (mp7_get_pattern_source(ctx) != MP7_PATTERN_SOURCE_PRESET) {
+        if (pops_get_pattern_source(ctx) != POPS_PATTERN_SOURCE_PRESET) {
             fail("a reset did not return to the preset source");
             goto reset_done;
         }
 
         same = 1;
-        for (column = 0u; same && (column < MP7_USER_PATTERN_COLUMNS); column++) {
-            if (!mp7_get_user_pattern(ctx, 0u, &readback) ||
+        for (column = 0u; same && (column < POPS_USER_PATTERN_COLUMNS); column++) {
+            if (!pops_get_user_pattern(ctx, 0u, &readback) ||
                 (readback.notes[column] != low.notes[column]) ||
                 (readback.timesig != low.timesig)) {
                 same = 0;
@@ -1590,8 +1590,8 @@ static int command_user(void)
         }
 
         same = 1;
-        for (column = 0u; same && (column < MP7_USER_PATTERN_COLUMNS); column++) {
-            if (!mp7_get_user_pattern(ctx, 4u, &readback) ||
+        for (column = 0u; same && (column < POPS_USER_PATTERN_COLUMNS); column++) {
+            if (!pops_get_user_pattern(ctx, 4u, &readback) ||
                 (readback.notes[column] != mid.notes[column]) ||
                 (readback.timesig != mid.timesig)) {
                 same = 0;
@@ -1603,8 +1603,8 @@ static int command_user(void)
         }
 
         same = 1;
-        for (column = 0u; same && (column < MP7_USER_PATTERN_COLUMNS); column++) {
-            if (!mp7_get_user_pattern(ctx, MP7_USER_PATTERN_COUNT - 1u,
+        for (column = 0u; same && (column < POPS_USER_PATTERN_COLUMNS); column++) {
+            if (!pops_get_user_pattern(ctx, POPS_USER_PATTERN_COUNT - 1u,
                                      &readback) ||
                 (readback.notes[column] != high.notes[column]) ||
                 (readback.timesig != high.timesig)) {
@@ -1616,7 +1616,7 @@ static int command_user(void)
             goto reset_done;
         }
 
-        if (mp7_get_user_pattern(ctx, 1u, &readback)) {
+        if (pops_get_user_pattern(ctx, 1u, &readback)) {
             fail("a reset refilled an emptied user slot");
             goto reset_done;
         }
@@ -1634,14 +1634,14 @@ static int command_user(void)
         size_t i;
 
         mp7_init(ctx, sample_rate);
-        fill_user_pattern(&pattern, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_4_4);
-        mp7_set_user_pattern(ctx, 0u, &pattern);
-        mp7_select_rhythm(ctx, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
-        mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
+        fill_user_pattern(&pattern, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_4_4);
+        pops_set_user_pattern(ctx, 0u, &pattern);
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+        pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
 
         memset(block, 0, sizeof(block));
-        mp7_process(ctx, block, 512);
+        pops_process(ctx, block, 512);
         for (i = 0u; i < 512u * 2u; i++) {
             if (block[i] != 0) {
                 nonzero = 1;
@@ -1657,16 +1657,16 @@ static int command_user(void)
 
     /* A pattern that is playing changes with the pattern. */
     {
-        struct mp7_user_pattern changed;
+        struct pops_user_pattern changed;
 
         mp7_init(ctx, sample_rate);
-        fill_user_pattern(&pattern, (uint16_t)(1u << MP7_INSTR_BASS), MP7_TIMESIG_4_4);
-        mp7_set_user_pattern(ctx, 0u, &pattern);
-        mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
-        mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
+        fill_user_pattern(&pattern, (uint16_t)(1u << POPS_INSTR_BASS), POPS_TIMESIG_4_4);
+        pops_set_user_pattern(ctx, 0u, &pattern);
+        pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+        pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
 
-        fill_user_pattern(&changed, (uint16_t)(1u << MP7_INSTR_SNARE_2), MP7_TIMESIG_4_4);
-        mp7_set_user_pattern(ctx, 0u, &changed);
+        fill_user_pattern(&changed, (uint16_t)(1u << POPS_INSTR_SNARE_2), POPS_TIMESIG_4_4);
+        pops_set_user_pattern(ctx, 0u, &changed);
         if (!user_grid_matches(&ctx->sequencer, &changed)) {
             fail("a playing user pattern did not change with the pattern");
         } else {
@@ -1678,38 +1678,38 @@ static int command_user(void)
      * column (except the gated Guiro) louder, and it survives a slot round
      * trip. */
     {
-        struct mp7_user_pattern accented;
-        struct mp7_user_pattern readback;
+        struct pops_user_pattern accented;
+        struct pops_user_pattern readback;
         unsigned int failures_before = (unsigned int)failures;
 
         mp7_init(ctx, sample_rate);
         memset(&accented, 0, sizeof(accented));
-        accented.timesig = MP7_TIMESIG_4_4;
-        accented.notes[0] = (uint16_t)(1u << MP7_INSTR_BASS);
-        accented.notes[1] = (uint16_t)((1u << MP7_INSTR_BASS) |
-                                       MP7_PATTERN_ACCENT);
+        accented.timesig = POPS_TIMESIG_4_4;
+        accented.notes[0] = (uint16_t)(1u << POPS_INSTR_BASS);
+        accented.notes[1] = (uint16_t)((1u << POPS_INSTR_BASS) |
+                                       POPS_PATTERN_ACCENT);
 
-        mp7_set_user_pattern(ctx, 0u, &accented);
-        if (!mp7_get_user_pattern(ctx, 0u, &readback)) {
-            fail("mp7_get_user_pattern() did not return an accented pattern");
+        pops_set_user_pattern(ctx, 0u, &accented);
+        if (!pops_get_user_pattern(ctx, 0u, &readback)) {
+            fail("pops_get_user_pattern() did not return an accented pattern");
         } else if (readback.notes[1] != accented.notes[1]) {
             fail("the accent bit did not survive the user pattern round trip");
         }
 
-        mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
-        mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
+        pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+        pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
 
         /* A beat of eight samples makes a column one sample long, so every
          * tick fires the next column. */
         ctx->sequencer.beat_samples = 8u;
 
         mp7_pattern_tick(ctx);                 /* fire column 0 */
-        if (ctx->voices[MP7_INSTR_BASS].accent_gain_q16 != POPPY_Q16_ONE) {
+        if (ctx->voices[POPS_INSTR_BASS].accent_gain_q16 != POPS_Q16_ONE) {
             fail("an unaccented column carries accent gain");
         }
 
         mp7_pattern_tick(ctx);                   /* fire column 1 */
-        if (ctx->voices[MP7_INSTR_BASS].accent_gain_q16 !=
+        if (ctx->voices[POPS_INSTR_BASS].accent_gain_q16 !=
             MP7_PATTERN_ACCENT_GAIN_Q16) {
             fail("an accented column does not raise the instrument gain");
         }
@@ -1721,28 +1721,28 @@ static int command_user(void)
 
     /* The gated Guiro ignores the accent bit; its gain stays at unity. */
     {
-        struct mp7_user_pattern accented;
+        struct pops_user_pattern accented;
         unsigned int failures_before = (unsigned int)failures;
 
         mp7_init(ctx, sample_rate);
         memset(&accented, 0, sizeof(accented));
-        accented.timesig = MP7_TIMESIG_4_4;
-        accented.notes[0] = (uint16_t)(1u << MP7_INSTR_GUIRO);
-        accented.notes[1] = (uint16_t)((1u << MP7_INSTR_GUIRO) |
-                                       MP7_PATTERN_ACCENT);
+        accented.timesig = POPS_TIMESIG_4_4;
+        accented.notes[0] = (uint16_t)(1u << POPS_INSTR_GUIRO);
+        accented.notes[1] = (uint16_t)((1u << POPS_INSTR_GUIRO) |
+                                       POPS_PATTERN_ACCENT);
 
-        mp7_set_user_pattern(ctx, 0u, &accented);
-        mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
-        mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
+        pops_set_user_pattern(ctx, 0u, &accented);
+        pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+        pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
         ctx->sequencer.beat_samples = 8u;
 
         mp7_pattern_tick(ctx);                 /* fire column 0 */
-        if (ctx->voices[MP7_INSTR_GUIRO].accent_gain_q16 != POPPY_Q16_ONE) {
+        if (ctx->voices[POPS_INSTR_GUIRO].accent_gain_q16 != POPS_Q16_ONE) {
             fail("unaccented Guiro column changed the Guiro gain");
         }
 
         mp7_pattern_tick(ctx);                 /* fire column 1 */
-        if (ctx->voices[MP7_INSTR_GUIRO].accent_gain_q16 != POPPY_Q16_ONE) {
+        if (ctx->voices[POPS_INSTR_GUIRO].accent_gain_q16 != POPS_Q16_ONE) {
             fail("accented Guiro column changed the Guiro gain");
         }
 
@@ -1758,7 +1758,7 @@ static int command_user(void)
      * until the next trigger if the cache were not refreshed here. */
     {
         struct mp7_context_s *live = context_new();
-        struct mp7_user_pattern accented;
+        struct pops_user_pattern accented;
         int16_t stereo[512 * 2];
         int32_t base_gain;
         int32_t expected_gain;
@@ -1768,35 +1768,35 @@ static int command_user(void)
 
         mp7_init(live, sample_rate);
         memset(&accented, 0, sizeof(accented));
-        accented.timesig = MP7_TIMESIG_4_4;
-        accented.notes[0] = (uint16_t)((1u << MP7_INSTR_BASS) |
-                                       MP7_PATTERN_ACCENT);
+        accented.timesig = POPS_TIMESIG_4_4;
+        accented.notes[0] = (uint16_t)((1u << POPS_INSTR_BASS) |
+                                       POPS_PATTERN_ACCENT);
 
-        mp7_set_user_pattern(live, 0u, &accented);
-        mp7_select_rhythm(live, MP7_BANK_A,
-                          mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
-        mp7_set_pattern_source(live, MP7_PATTERN_SOURCE_USER);
+        pops_set_user_pattern(live, 0u, &accented);
+        pops_select_rhythm(live, POPS_BANK_A,
+                          pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+        pops_set_pattern_source(live, POPS_PATTERN_SOURCE_USER);
 
         /* A beat of 800 samples makes a column 100 samples long, so the
          * column fires in this block, after the gain was computed for it. */
         live->sequencer.beat_samples = 800u;
 
-        mp7_process(live, stereo, 512);        /* the column fires here */
+        pops_process(live, stereo, 512);        /* the column fires here */
 
-        if (live->voices[MP7_INSTR_BASS].accent_gain_q16 !=
+        if (live->voices[POPS_INSTR_BASS].accent_gain_q16 !=
             MP7_PATTERN_ACCENT_GAIN_Q16) {
             fail("the accented column did not fire inside the block");
         }
 
-        base_gain = poppy_mul_q16(
-            live->voices[MP7_INSTR_BASS].level_q16,
-            poppy_mul_q16(
-                poppy_mixer_balance_gain_q16(&live->mixer,
-                                             live->voices[MP7_INSTR_BASS].balance_group),
-                live->mixer.instr_gain_q16[MP7_INSTR_BASS]));
-        expected_gain = poppy_mul_q16(base_gain, MP7_PATTERN_ACCENT_GAIN_Q16);
+        base_gain = pops_mul_q16(
+            live->voices[POPS_INSTR_BASS].level_q16,
+            pops_mul_q16(
+                pops_mixer_balance_gain_q16(&live->mixer,
+                                             live->voices[POPS_INSTR_BASS].balance_group),
+                live->mixer.instr_gain_q16[POPS_INSTR_BASS]));
+        expected_gain = pops_mul_q16(base_gain, MP7_PATTERN_ACCENT_GAIN_Q16);
 
-        if (live->voice_gain_q16[MP7_INSTR_BASS] != expected_gain) {
+        if (live->voice_gain_q16[POPS_INSTR_BASS] != expected_gain) {
             fail("the accent did not reach the voice gain when the column fired");
         }
 
@@ -1810,8 +1810,8 @@ static int command_user(void)
 
         /* The same note, without the accent. */
         mp7_init(live, sample_rate);
-        mp7_trigger(live, MP7_INSTR_BASS, 100);
-        mp7_process(live, stereo, 512);
+        pops_trigger(live, POPS_INSTR_BASS, 100);
+        pops_process(live, stereo, 512);
         for (i = 0u; i < 512u * 2u; i++) {
             int32_t value = (stereo[i] < 0) ? -stereo[i] : stereo[i];
 
@@ -1845,46 +1845,46 @@ static int command_user(void)
         /* Accent gain clamps to 0.5..2.0, has a matching getter, and
          * changes the accented column. */
         mp7_init(ctx, sample_rate);
-        if (mp7_get_accent_gain(ctx) != MP7_PATTERN_ACCENT_GAIN_Q16) {
+        if (pops_get_accent_gain(ctx) != MP7_PATTERN_ACCENT_GAIN_Q16) {
             fail("accent gain getter did not return the default");
         }
-        if (mp7_get_accent_gain(0) != 0) {
+        if (pops_get_accent_gain(0) != 0) {
             fail("accent gain getter did not return 0 for a null context");
         }
-        mp7_set_accent_gain(ctx, 3 * POPPY_Q16_ONE);
-        if (mp7_get_accent_gain(ctx) != 2 * POPPY_Q16_ONE) {
+        pops_set_accent_gain(ctx, 3 * POPS_Q16_ONE);
+        if (pops_get_accent_gain(ctx) != 2 * POPS_Q16_ONE) {
             fail("accent gain is not clamped to 2.0");
         }
-        mp7_set_accent_gain(ctx, POPPY_Q16_ONE / 4);
-        if (mp7_get_accent_gain(ctx) != POPPY_Q16_ONE / 2) {
+        pops_set_accent_gain(ctx, POPS_Q16_ONE / 4);
+        if (pops_get_accent_gain(ctx) != POPS_Q16_ONE / 2) {
             fail("accent gain is not clamped to 0.5");
         }
 
         {
-            struct mp7_user_pattern accented;
+            struct pops_user_pattern accented;
 
             memset(&accented, 0, sizeof(accented));
-            accented.timesig = MP7_TIMESIG_4_4;
-            accented.notes[0] = (uint16_t)((1u << MP7_INSTR_BASS) |
-                                            MP7_PATTERN_ACCENT);
-            accented.notes[1] = (uint16_t)((1u << MP7_INSTR_BASS) |
-                                           MP7_PATTERN_ACCENT);
-            mp7_set_user_pattern(ctx, 0u, &accented);
-            mp7_select_rhythm(ctx, MP7_BANK_A,
-                              mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
-            mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
+            accented.timesig = POPS_TIMESIG_4_4;
+            accented.notes[0] = (uint16_t)((1u << POPS_INSTR_BASS) |
+                                            POPS_PATTERN_ACCENT);
+            accented.notes[1] = (uint16_t)((1u << POPS_INSTR_BASS) |
+                                           POPS_PATTERN_ACCENT);
+            pops_set_user_pattern(ctx, 0u, &accented);
+            pops_select_rhythm(ctx, POPS_BANK_A,
+                              pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+            pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
             ctx->sequencer.beat_samples = 8u;
 
-            mp7_set_accent_gain(ctx, POPPY_Q16_ONE);
+            pops_set_accent_gain(ctx, POPS_Q16_ONE);
             mp7_pattern_tick(ctx);                 /* fire column 0 */
-            if (ctx->voices[MP7_INSTR_BASS].accent_gain_q16 != POPPY_Q16_ONE) {
+            if (ctx->voices[POPS_INSTR_BASS].accent_gain_q16 != POPS_Q16_ONE) {
                 fail("accent gain 1.0 did not take effect");
             }
 
-            mp7_set_accent_gain(ctx, POPPY_Q16_ONE / 2);
+            pops_set_accent_gain(ctx, POPS_Q16_ONE / 2);
             mp7_pattern_tick(ctx);                 /* fire column 1 */
-            if (ctx->voices[MP7_INSTR_BASS].accent_gain_q16 !=
-                POPPY_Q16_ONE / 2) {
+            if (ctx->voices[POPS_INSTR_BASS].accent_gain_q16 !=
+                POPS_Q16_ONE / 2) {
                 fail("accent gain change did not reach the voice");
             }
         }
@@ -1892,49 +1892,49 @@ static int command_user(void)
         /* Snare 1 decay multiplier. */
         mp7_init(ctx, sample_rate);
         {
-            int32_t default_decay = ctx->voices[MP7_INSTR_SNARE_1].amp_env.decay_coef;
+            int32_t default_decay = ctx->voices[POPS_INSTR_SNARE_1].amp_env.decay_coef;
 
-            mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_1, 2 * POPPY_Q16_ONE);
-            if (ctx->voices[MP7_INSTR_SNARE_1].amp_env.decay_coef >=
+            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, 2 * POPS_Q16_ONE);
+            if (ctx->voices[POPS_INSTR_SNARE_1].amp_env.decay_coef >=
                 default_decay) {
                 fail("doubling Snare 1 decay did not lengthen the decay");
             }
-            mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_1, POPPY_Q16_ONE / 2);
-            if (ctx->voices[MP7_INSTR_SNARE_1].amp_env.decay_coef <=
+            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, POPS_Q16_ONE / 2);
+            if (ctx->voices[POPS_INSTR_SNARE_1].amp_env.decay_coef <=
                 default_decay) {
                 fail("halving Snare 1 decay did not shorten the decay");
             }
         }
 
-        mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_1, 8 * POPPY_Q16_ONE);
-        if (mp7_get_instr_decay(ctx, MP7_INSTR_SNARE_1) != 4 * POPPY_Q16_ONE) {
+        pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, 8 * POPS_Q16_ONE);
+        if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != 4 * POPS_Q16_ONE) {
             fail("Snare 1 decay multiplier is not clamped to 4.0");
         }
-        mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_1, POPPY_Q16_ONE / 8);
-        if (mp7_get_instr_decay(ctx, MP7_INSTR_SNARE_1) != POPPY_Q16_ONE / 4) {
+        pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, POPS_Q16_ONE / 8);
+        if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != POPS_Q16_ONE / 4) {
             fail("Snare 1 decay multiplier is not clamped to 0.25");
         }
 
         /* Snare 1 band-pass frequency. */
         mp7_init(ctx, sample_rate);
         {
-            int32_t default_b0 = ctx->voices[MP7_INSTR_SNARE_1].bandpass.b0;
+            int32_t default_b0 = ctx->voices[POPS_INSTR_SNARE_1].bandpass.b0;
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_1, 10000u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_1) != 10000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 10000u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_1) != 10000u) {
                 fail("Snare 1 cut-off frequency was not stored");
             }
-            if (ctx->voices[MP7_INSTR_SNARE_1].bandpass.b0 == default_b0) {
+            if (ctx->voices[POPS_INSTR_SNARE_1].bandpass.b0 == default_b0) {
                 fail("Snare 1 cut-off frequency change did not update the bandpass");
             }
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_1, 500u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_1) != 1000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 500u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_1) != 1000u) {
                 fail("Snare 1 cut-off frequency is not clamped to the minimum");
             }
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_1, 20000u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_1) != 15000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 20000u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_1) != 15000u) {
                 fail("Snare 1 cut-off frequency is not clamped to the maximum");
             }
         }
@@ -1942,27 +1942,27 @@ static int command_user(void)
         /* Hihat band-pass frequency. The high-pass stays at 1000 Hz. */
         mp7_init(ctx, sample_rate);
         {
-            int32_t default_b0 = ctx->voices[MP7_INSTR_HIHAT].bandpass.b0;
-            int32_t default_hp = ctx->voices[MP7_INSTR_HIHAT].highpass.b0;
+            int32_t default_b0 = ctx->voices[POPS_INSTR_HIHAT].bandpass.b0;
+            int32_t default_hp = ctx->voices[POPS_INSTR_HIHAT].highpass.b0;
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_HIHAT, 5000u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_HIHAT) != 5000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 5000u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != 5000u) {
                 fail("Hihat cut-off frequency was not stored");
             }
-            if (ctx->voices[MP7_INSTR_HIHAT].bandpass.b0 == default_b0) {
+            if (ctx->voices[POPS_INSTR_HIHAT].bandpass.b0 == default_b0) {
                 fail("Hihat cut-off frequency change did not update the bandpass");
             }
-            if (ctx->voices[MP7_INSTR_HIHAT].highpass.b0 != default_hp) {
+            if (ctx->voices[POPS_INSTR_HIHAT].highpass.b0 != default_hp) {
                 fail("Hihat cut-off frequency change moved the high-pass");
             }
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_HIHAT, 20000u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_HIHAT) != 15000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 20000u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != 15000u) {
                 fail("Hihat cut-off frequency is not clamped to the maximum");
             }
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_HIHAT, 500u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_HIHAT) != 2000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 500u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != 2000u) {
                 fail("Hihat cut-off frequency is not clamped to the minimum");
             }
         }
@@ -1970,38 +1970,38 @@ static int command_user(void)
         /* Snare 2 decay multiplier and band-pass cut-off. */
         mp7_init(ctx, sample_rate);
         {
-            int32_t default_decay = ctx->voices[MP7_INSTR_SNARE_2].amp_env.decay_coef;
-            int32_t default_b0 = ctx->voices[MP7_INSTR_SNARE_2].bandpass.b0;
+            int32_t default_decay = ctx->voices[POPS_INSTR_SNARE_2].amp_env.decay_coef;
+            int32_t default_b0 = ctx->voices[POPS_INSTR_SNARE_2].bandpass.b0;
 
-            mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_2, 2 * POPPY_Q16_ONE);
-            if (ctx->voices[MP7_INSTR_SNARE_2].amp_env.decay_coef >= default_decay) {
+            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, 2 * POPS_Q16_ONE);
+            if (ctx->voices[POPS_INSTR_SNARE_2].amp_env.decay_coef >= default_decay) {
                 fail("doubling Snare 2 decay did not lengthen the decay");
             }
 
-            mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_2, 8 * POPPY_Q16_ONE);
-            if (mp7_get_instr_decay(ctx, MP7_INSTR_SNARE_2) != 4 * POPPY_Q16_ONE) {
+            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, 8 * POPS_Q16_ONE);
+            if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_2) != 4 * POPS_Q16_ONE) {
                 fail("Snare 2 decay multiplier is not clamped to 4.0");
             }
-            mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_2, POPPY_Q16_ONE / 8);
-            if (mp7_get_instr_decay(ctx, MP7_INSTR_SNARE_2) != POPPY_Q16_ONE / 4) {
+            pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, POPS_Q16_ONE / 8);
+            if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_2) != POPS_Q16_ONE / 4) {
                 fail("Snare 2 decay multiplier is not clamped to 0.25");
             }
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_2, 10000u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_2) != 10000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 10000u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_2) != 10000u) {
                 fail("Snare 2 cut-off frequency was not stored");
             }
-            if (ctx->voices[MP7_INSTR_SNARE_2].bandpass.b0 == default_b0) {
+            if (ctx->voices[POPS_INSTR_SNARE_2].bandpass.b0 == default_b0) {
                 fail("Snare 2 cut-off frequency change did not update the bandpass");
             }
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_2, 500u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_2) != 1000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 500u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_2) != 1000u) {
                 fail("Snare 2 cut-off frequency is not clamped to the minimum");
             }
 
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_2, 20000u);
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_2) != 15000u) {
+            pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 20000u);
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_2) != 15000u) {
                 fail("Snare 2 cut-off frequency is not clamped to the maximum");
             }
         }
@@ -2009,19 +2009,19 @@ static int command_user(void)
         /* Hihat decay multiplier. */
         mp7_init(ctx, sample_rate);
         {
-            int32_t default_decay = ctx->voices[MP7_INSTR_HIHAT].amp_env.decay_coef;
+            int32_t default_decay = ctx->voices[POPS_INSTR_HIHAT].amp_env.decay_coef;
 
-            mp7_set_instr_decay(ctx, MP7_INSTR_HIHAT, 2 * POPPY_Q16_ONE);
-            if (ctx->voices[MP7_INSTR_HIHAT].amp_env.decay_coef >= default_decay) {
+            pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 2 * POPS_Q16_ONE);
+            if (ctx->voices[POPS_INSTR_HIHAT].amp_env.decay_coef >= default_decay) {
                 fail("doubling Hihat decay did not lengthen the decay");
             }
 
-            mp7_set_instr_decay(ctx, MP7_INSTR_HIHAT, 8 * POPPY_Q16_ONE);
-            if (mp7_get_instr_decay(ctx, MP7_INSTR_HIHAT) != 4 * POPPY_Q16_ONE) {
+            pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 8 * POPS_Q16_ONE);
+            if (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != 4 * POPS_Q16_ONE) {
                 fail("Hihat decay multiplier is not clamped to 4.0");
             }
-            mp7_set_instr_decay(ctx, MP7_INSTR_HIHAT, POPPY_Q16_ONE / 8);
-            if (mp7_get_instr_decay(ctx, MP7_INSTR_HIHAT) != POPPY_Q16_ONE / 4) {
+            pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, POPS_Q16_ONE / 8);
+            if (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != POPS_Q16_ONE / 4) {
                 fail("Hihat decay multiplier is not clamped to 0.25");
             }
         }
@@ -2029,21 +2029,21 @@ static int command_user(void)
         /* An instrument without the parameter ignores the call. */
         mp7_init(ctx, sample_rate);
         {
-            int32_t bass_decay = ctx->voices[MP7_INSTR_BASS].amp_env.decay_coef;
-            int32_t bass_b0 = ctx->voices[MP7_INSTR_BASS].bandpass.b0;
+            int32_t bass_decay = ctx->voices[POPS_INSTR_BASS].amp_env.decay_coef;
+            int32_t bass_b0 = ctx->voices[POPS_INSTR_BASS].bandpass.b0;
 
-            mp7_set_instr_decay(ctx, MP7_INSTR_BASS, 3 * POPPY_Q16_ONE);
-            mp7_set_instr_cutoff(ctx, MP7_INSTR_BASS, 3000u);
-            if (ctx->voices[MP7_INSTR_BASS].amp_env.decay_coef != bass_decay) {
+            pops_set_instr_decay(ctx, POPS_INSTR_BASS, 3 * POPS_Q16_ONE);
+            pops_set_instr_cutoff(ctx, POPS_INSTR_BASS, 3000u);
+            if (ctx->voices[POPS_INSTR_BASS].amp_env.decay_coef != bass_decay) {
                 fail("a decay change reached an instrument that has none");
             }
-            if (ctx->voices[MP7_INSTR_BASS].bandpass.b0 != bass_b0) {
+            if (ctx->voices[POPS_INSTR_BASS].bandpass.b0 != bass_b0) {
                 fail("a cut-off change reached an instrument that has none");
             }
-            if (mp7_get_instr_decay(ctx, MP7_INSTR_BASS) != 0) {
+            if (pops_get_instr_decay(ctx, POPS_INSTR_BASS) != 0) {
                 fail("a decay change was stored for an instrument that has none");
             }
-            if (mp7_get_instr_cutoff(ctx, MP7_INSTR_BASS) != 0u) {
+            if (pops_get_instr_cutoff(ctx, POPS_INSTR_BASS) != 0u) {
                 fail("a cut-off change was stored for an instrument that has none");
             }
         }
@@ -2051,49 +2051,49 @@ static int command_user(void)
         /* The getters mirror the setters, and answer 0 for a null
          * context. */
         mp7_init(ctx, sample_rate);
-        if (mp7_get_instr_decay(ctx, MP7_INSTR_SNARE_1) != POPPY_Q16_ONE) {
+        if (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != POPS_Q16_ONE) {
             fail("the decay getter did not return the default");
         }
-        if (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_1) != MP7_SNARE1_BANDPASS_HZ) {
+        if (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_1) != MP7_SNARE1_BANDPASS_HZ) {
             fail("the cut-off getter did not return the default");
         }
-        if (mp7_get_instr_cutoff(ctx, MP7_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ) {
+        if (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ) {
             fail("the Hihat cut-off getter did not return the default");
         }
-        if ((mp7_get_instr_decay(0, MP7_INSTR_SNARE_1) != 0) ||
-            (mp7_get_instr_cutoff(0, MP7_INSTR_SNARE_1) != 0u)) {
+        if ((pops_get_instr_decay(0, POPS_INSTR_SNARE_1) != 0) ||
+            (pops_get_instr_cutoff(0, POPS_INSTR_SNARE_1) != 0u)) {
             fail("the getters did not return 0 for a null context");
         }
 
-        /* mp7_reset() restores the synthesis defaults. */
-        mp7_set_accent_gain(ctx, POPPY_Q16_ONE / 2);
-        mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_1, 4 * POPPY_Q16_ONE);
-        mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_2, 4 * POPPY_Q16_ONE);
-        mp7_set_instr_decay(ctx, MP7_INSTR_HIHAT, 4 * POPPY_Q16_ONE);
-        mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_1, 10000u);
-        mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_2, 10000u);
-        mp7_set_instr_cutoff(ctx, MP7_INSTR_HIHAT, 5000u);
-        mp7_reset(ctx);
-        if ((mp7_get_accent_gain(ctx) != MP7_PATTERN_ACCENT_GAIN_Q16) ||
-            (mp7_get_instr_decay(ctx, MP7_INSTR_SNARE_1) != POPPY_Q16_ONE) ||
-            (mp7_get_instr_decay(ctx, MP7_INSTR_SNARE_2) != POPPY_Q16_ONE) ||
-            (mp7_get_instr_decay(ctx, MP7_INSTR_HIHAT) != POPPY_Q16_ONE) ||
-            (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_1) != MP7_SNARE1_BANDPASS_HZ) ||
-            (mp7_get_instr_cutoff(ctx, MP7_INSTR_SNARE_2) != MP7_SNARE2_BANDPASS_HZ) ||
-            (mp7_get_instr_cutoff(ctx, MP7_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ)) {
-            fail("mp7_reset() did not restore the extended synthesis defaults");
+        /* pops_reset() restores the synthesis defaults. */
+        pops_set_accent_gain(ctx, POPS_Q16_ONE / 2);
+        pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, 4 * POPS_Q16_ONE);
+        pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, 4 * POPS_Q16_ONE);
+        pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 4 * POPS_Q16_ONE);
+        pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 10000u);
+        pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 10000u);
+        pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 5000u);
+        pops_reset(ctx);
+        if ((pops_get_accent_gain(ctx) != MP7_PATTERN_ACCENT_GAIN_Q16) ||
+            (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_1) != POPS_Q16_ONE) ||
+            (pops_get_instr_decay(ctx, POPS_INSTR_SNARE_2) != POPS_Q16_ONE) ||
+            (pops_get_instr_decay(ctx, POPS_INSTR_HIHAT) != POPS_Q16_ONE) ||
+            (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_1) != MP7_SNARE1_BANDPASS_HZ) ||
+            (pops_get_instr_cutoff(ctx, POPS_INSTR_SNARE_2) != MP7_SNARE2_BANDPASS_HZ) ||
+            (pops_get_instr_cutoff(ctx, POPS_INSTR_HIHAT) != MP7_HIHAT_BANDPASS_HZ)) {
+            fail("pops_reset() did not restore the extended synthesis defaults");
         } else {
-            ok("mp7_reset() restores the extended synthesis defaults");
+            ok("pops_reset() restores the extended synthesis defaults");
         }
 
         /* A null context is ignored by every setter. */
-        mp7_set_accent_gain(0, POPPY_Q16_ONE);
-        mp7_set_instr_decay(0, MP7_INSTR_SNARE_1, POPPY_Q16_ONE);
-        mp7_set_instr_decay(0, MP7_INSTR_SNARE_2, POPPY_Q16_ONE);
-        mp7_set_instr_decay(0, MP7_INSTR_HIHAT, POPPY_Q16_ONE);
-        mp7_set_instr_cutoff(0, MP7_INSTR_SNARE_1, 1000u);
-        mp7_set_instr_cutoff(0, MP7_INSTR_SNARE_2, 1000u);
-        mp7_set_instr_cutoff(0, MP7_INSTR_HIHAT, 1000u);
+        pops_set_accent_gain(0, POPS_Q16_ONE);
+        pops_set_instr_decay(0, POPS_INSTR_SNARE_1, POPS_Q16_ONE);
+        pops_set_instr_decay(0, POPS_INSTR_SNARE_2, POPS_Q16_ONE);
+        pops_set_instr_decay(0, POPS_INSTR_HIHAT, POPS_Q16_ONE);
+        pops_set_instr_cutoff(0, POPS_INSTR_SNARE_1, 1000u);
+        pops_set_instr_cutoff(0, POPS_INSTR_SNARE_2, 1000u);
+        pops_set_instr_cutoff(0, POPS_INSTR_HIHAT, 1000u);
         ok("the extended synthesis setters ignore a null context");
 
         if ((unsigned int)failures == failures_before) {
@@ -2104,7 +2104,7 @@ static int command_user(void)
     /* A decay change must not cut off a note that is already sounding. */
     {
         struct mp7_context_s *live = context_new();
-        struct mp7_voice *snare = &live->voices[MP7_INSTR_SNARE_1];
+        struct mp7_voice *snare = &live->voices[POPS_INSTR_SNARE_1];
         unsigned int i;
         int still_playing = 1;
 
@@ -2115,18 +2115,18 @@ static int command_user(void)
         }
 
         /* The note is well into its decay when the change arrives. */
-        if (snare->amp_env.stage != POPPY_ENV_DECAY) {
+        if (snare->amp_env.stage != POPS_ENV_DECAY) {
             fail("the Snare 1 note did not reach its decay stage");
             still_playing = 0;
         }
 
-        mp7_set_instr_decay(live, MP7_INSTR_SNARE_1, 2 * POPPY_Q16_ONE);
+        pops_set_instr_decay(live, POPS_INSTR_SNARE_1, 2 * POPS_Q16_ONE);
 
         if (still_playing) {
             if (!snare->active) {
                 fail("a decay change deactivated the Snare 1 voice");
                 still_playing = 0;
-            } else if (snare->amp_env.stage != POPPY_ENV_DECAY) {
+            } else if (snare->amp_env.stage != POPS_ENV_DECAY) {
                 fail("a decay change reset the Snare 1 envelope");
                 still_playing = 0;
             } else if (mp7_voice_process(snare) == 0) {
@@ -2155,22 +2155,22 @@ static int command_user(void)
             double bp_pole;
 
             mp7_init(low, rates[r]);
-            mp7_set_instr_cutoff(low, MP7_INSTR_SNARE_1, 15000u);
-            mp7_set_instr_cutoff(low, MP7_INSTR_SNARE_2, 15000u);
-            mp7_set_instr_cutoff(low, MP7_INSTR_HIHAT, 15000u);
+            pops_set_instr_cutoff(low, POPS_INSTR_SNARE_1, 15000u);
+            pops_set_instr_cutoff(low, POPS_INSTR_SNARE_2, 15000u);
+            pops_set_instr_cutoff(low, POPS_INSTR_HIHAT, 15000u);
 
             /* The cut-off moves the band-pass of all three instruments;
              * the Hihat's high-pass stays at its factory value. */
-            bp_pole = biquad_pole_radius(&low->voices[MP7_INSTR_SNARE_1].bandpass);
-            if (biquad_pole_radius(&low->voices[MP7_INSTR_SNARE_2].bandpass) >= 1.0) {
+            bp_pole = biquad_pole_radius(&low->voices[POPS_INSTR_SNARE_1].bandpass);
+            if (biquad_pole_radius(&low->voices[POPS_INSTR_SNARE_2].bandpass) >= 1.0) {
                 fail("a cut-off above Nyquist made the Snare 2 biquad unstable");
                 all_stable = 0;
             }
-            if (biquad_pole_radius(&low->voices[MP7_INSTR_HIHAT].bandpass) >= 1.0) {
+            if (biquad_pole_radius(&low->voices[POPS_INSTR_HIHAT].bandpass) >= 1.0) {
                 fail("a cut-off above Nyquist made the Hihat biquad unstable");
                 all_stable = 0;
             }
-            if (biquad_pole_radius(&low->voices[MP7_INSTR_HIHAT].highpass) >= 1.0) {
+            if (biquad_pole_radius(&low->voices[POPS_INSTR_HIHAT].highpass) >= 1.0) {
                 fail("the fixed Hihat high-pass became unstable");
                 all_stable = 0;
             }
@@ -2191,16 +2191,16 @@ static int command_user(void)
     return failures == 0 ? 0 : 1;
 }
 
-#else /* !LIBPOPPY_EXTRA */
+#else /* !LIBPOPS_EXTRA */
 
 static int command_user(void)
 {
     printf("skip: the user pattern slots need an extended build"
-           " (-DLIBPOPPY_EXTRA)\n");
+           " (-DLIBPOPS_EXTRA)\n");
     return 0;
 }
 
-#endif /* LIBPOPPY_EXTRA */
+#endif /* LIBPOPS_EXTRA */
 
 static int render_rhythm(struct mp7_context_s *ctx,
                          uint32_t selection,
@@ -2226,7 +2226,7 @@ static int render_rhythm(struct mp7_context_s *ctx,
      * than the average. */
     frames = enabled * ((size_t)ctx->sequencer.beat_samples / steps + 1u);
 
-    mp7_process(ctx, stereo, frames);
+    pops_process(ctx, stereo, frames);
     *frames_out = frames;
     return (int)enabled;
 }
@@ -2234,7 +2234,7 @@ static int render_rhythm(struct mp7_context_s *ctx,
 static int command_rhythms(const char *dir)
 {
     struct mp7_context_s *ctx = context_new();
-    const uint32_t sample_rate = MP7_DEFAULT_SAMPLE_RATE;
+    const uint32_t sample_rate = POPS_DEFAULT_SAMPLE_RATE;
     size_t max_frames = (size_t)(sample_rate * 5u);
     int16_t *stereo = (int16_t *)malloc(max_frames * 2u * sizeof(int16_t));
     unsigned int rhythm;
@@ -2246,7 +2246,7 @@ static int command_rhythms(const char *dir)
         return 1;
     }
 
-    for (rhythm = 0u; rhythm < (unsigned int)MP7_RHYTHM_COUNT; rhythm++) {
+    for (rhythm = 0u; rhythm < (unsigned int)POPS_RHYTHM_COUNT; rhythm++) {
         char path[512];
         size_t frames = 0u;
         size_t i;
@@ -2281,8 +2281,8 @@ static int command_rhythms(const char *dir)
     /* Two documented combinations, for A/B listening. */
     {
         static const uint32_t selections[2] = {
-            ((uint32_t)1u << MP7_RHYTHM_ROCK_1) | ((uint32_t)1u << MP7_RHYTHM_WALTZ),
-            ((uint32_t)1u << MP7_RHYTHM_ROCK_1) | ((uint32_t)1u << MP7_RHYTHM_MARCH_6_8)
+            ((uint32_t)1u << POPS_RHYTHM_ROCK_1) | ((uint32_t)1u << POPS_RHYTHM_WALTZ),
+            ((uint32_t)1u << POPS_RHYTHM_ROCK_1) | ((uint32_t)1u << POPS_RHYTHM_MARCH_6_8)
         };
         static const char *const names[2] = {
             "combo_rock1_waltz.wav",
@@ -2321,18 +2321,18 @@ static int command_rhythms(const char *dir)
 static int command_quijada(void)
 {
     struct mp7_context_s *ctx = context_new();
-    struct poppy_osc body_expected;
-    struct poppy_osc clock_expected;
-    const int32_t low = POPPY_Q30_ONE / 10;
-    const int32_t high = (int32_t)(((int64_t)POPPY_Q30_ONE * 6) / 10);
+    struct pops_osc body_expected;
+    struct pops_osc clock_expected;
+    const int32_t low = POPS_Q30_ONE / 10;
+    const int32_t high = (int32_t)(((int64_t)POPS_Q30_ONE * 6) / 10);
     struct mp7_voice *voice;
     int i;
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    voice = &ctx->voices[MP7_INSTR_QUIJADA];
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    voice = &ctx->voices[POPS_INSTR_QUIJADA];
 
-    poppy_osc_set_freq(&body_expected, 2700u, MP7_DEFAULT_SAMPLE_RATE);
-    poppy_osc_set_freq(&clock_expected, 25u, MP7_DEFAULT_SAMPLE_RATE);
+    pops_osc_set_freq(&body_expected, 2700u, POPS_DEFAULT_SAMPLE_RATE);
+    pops_osc_set_freq(&clock_expected, 25u, POPS_DEFAULT_SAMPLE_RATE);
     if (voice->body_osc.inc != body_expected.inc) {
         fail("Quijada body oscillator is not 2700 Hz");
     } else {
@@ -2358,29 +2358,29 @@ static int command_quijada(void)
 
     /* Comparator mapping: a crossing of the low threshold must fire the
      * short envelope, and a crossing of the high threshold the long one. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    voice = &ctx->voices[MP7_INSTR_QUIJADA];
-    voice->prev_clock = -POPPY_Q30_ONE;
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    voice = &ctx->voices[POPS_INSTR_QUIJADA];
+    voice->prev_clock = -POPS_Q30_ONE;
     voice->aux_osc.phase = (uint32_t)1024u << 16; /* sine peak */
-    voice->threshold_lo = POPPY_Q30_ONE / 5;      /* 0.2 */
+    voice->threshold_lo = POPS_Q30_ONE / 5;      /* 0.2 */
     voice->threshold_hi = INT32_MAX;              /* above the clock peak */
     (void)mp7_engine_process(voice);
-    if ((voice->short_env.stage != POPPY_ENV_ATTACK) ||
-        (voice->long_env.stage != POPPY_ENV_IDLE)) {
+    if ((voice->short_env.stage != POPS_ENV_ATTACK) ||
+        (voice->long_env.stage != POPS_ENV_IDLE)) {
         fail("low Quijada threshold does not fire the short envelope");
     } else {
         ok("low Quijada threshold fires the short envelope");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    voice = &ctx->voices[MP7_INSTR_QUIJADA];
-    voice->prev_clock = -POPPY_Q30_ONE;
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    voice = &ctx->voices[POPS_INSTR_QUIJADA];
+    voice->prev_clock = -POPS_Q30_ONE;
     voice->aux_osc.phase = (uint32_t)1024u << 16; /* sine peak */
     voice->threshold_lo = INT32_MAX;              /* above the clock peak */
-    voice->threshold_hi = (int32_t)(((int64_t)POPPY_Q30_ONE * 2) / 5);  /* 0.4 */
+    voice->threshold_hi = (int32_t)(((int64_t)POPS_Q30_ONE * 2) / 5);  /* 0.4 */
     (void)mp7_engine_process(voice);
-    if ((voice->long_env.stage != POPPY_ENV_ATTACK) ||
-        (voice->short_env.stage != POPPY_ENV_IDLE)) {
+    if ((voice->long_env.stage != POPS_ENV_ATTACK) ||
+        (voice->short_env.stage != POPS_ENV_IDLE)) {
         fail("high Quijada threshold does not fire the long envelope");
     } else {
         ok("high Quijada threshold fires the long envelope");
@@ -2420,12 +2420,12 @@ static int stereo_is_silent(const int16_t *stereo, size_t frames)
     return 1;
 }
 
-static void render_trigger(struct mp7_context_s *ctx, mp7_instr instr,
+static void render_trigger(struct mp7_context_s *ctx, pops_instr instr,
                            int16_t *stereo, size_t frames)
 {
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
     mp7_voice_trigger(&ctx->voices[instr]);
-    mp7_process(ctx, stereo, frames);
+    pops_process(ctx, stereo, frames);
 }
 
 static int command_mixer(void)
@@ -2446,33 +2446,33 @@ static int command_mixer(void)
 
     /* Defaults: Volume 1.0 (master gain 0.5), Balance center, instrument
      * gains at 0.5 for the three Additional Volume faders and 1.0 elsewhere. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    if ((ctx->mixer.panel_volume_q16 != POPPY_Q16_ONE) ||
-        (ctx->mixer.balance_q16 != POPPY_Q16_ONE / 2)) {
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    if ((ctx->mixer.panel_volume_q16 != POPS_Q16_ONE) ||
+        (ctx->mixer.balance_q16 != POPS_Q16_ONE / 2)) {
         fail("the mixer defaults are not Volume 1.0 / Balance 0.5");
     }
-    for (i = 0u; i < (unsigned int)MP7_INSTR_COUNT; i++) {
-        int32_t expected = POPPY_Q16_ONE;
+    for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+        int32_t expected = POPS_Q16_ONE;
 
-        if ((i == (unsigned int)MP7_INSTR_TAMBOURINE) ||
-            (i == (unsigned int)MP7_INSTR_GUIRO) ||
-            (i == (unsigned int)MP7_INSTR_QUIJADA)) {
-            expected = POPPY_Q16_ONE / 2;
+        if ((i == (unsigned int)POPS_INSTR_TAMBOURINE) ||
+            (i == (unsigned int)POPS_INSTR_GUIRO) ||
+            (i == (unsigned int)POPS_INSTR_QUIJADA)) {
+            expected = POPS_Q16_ONE / 2;
         }
         if (ctx->mixer.instr_gain_q16[i] != expected) {
             fail("an instrument gain does not have its panel default");
             break;
         }
     }
-    for (i = 0u; i < (unsigned int)MP7_INSTR_COUNT; i++) {
-        if (ctx->mixer.instr_pan_q16[i] != POPPY_Q16_ONE / 2) {
+    for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+        if (ctx->mixer.instr_pan_q16[i] != POPS_Q16_ONE / 2) {
             fail("an instrument pan does not default to center");
             break;
         }
     }
-    for (i = 0u; i < (unsigned int)MP7_INSTR_COUNT; i++) {
-        if ((ctx->voices[i].level_q16 != POPPY_Q16_ONE) ||
-            (ctx->voices[i].pan_q16 != POPPY_Q16_ONE / 2)) {
+    for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+        if ((ctx->voices[i].level_q16 != POPS_Q16_ONE) ||
+            (ctx->voices[i].pan_q16 != POPS_Q16_ONE / 2)) {
             fail("a voice does not default to Level 1.0 / Pan 0.5");
             break;
         }
@@ -2483,7 +2483,7 @@ static int command_mixer(void)
 
     /* A centered voice appears equally in both channels, and a hard pan sends
      * it entirely to one side. */
-    render_trigger(ctx, MP7_INSTR_BASS, stereo, frames);
+    render_trigger(ctx, POPS_INSTR_BASS, stereo, frames);
     if ((channel_peak(stereo, frames, 0u) == 0) ||
         (channel_peak(stereo, frames, 0u) != channel_peak(stereo, frames, 1u))) {
         fail("a centered voice is not equal in both channels");
@@ -2491,10 +2491,10 @@ static int command_mixer(void)
         ok("a centered voice is equal in both channels");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-    ctx->voices[MP7_INSTR_BASS].pan_q16 = 0;
-    mp7_process(ctx, stereo, frames);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+    ctx->voices[POPS_INSTR_BASS].pan_q16 = 0;
+    pops_process(ctx, stereo, frames);
     if ((channel_peak(stereo, frames, 0u) == 0) ||
         (channel_peak(stereo, frames, 1u) != 0)) {
         fail("pan 0 is not hard left");
@@ -2511,13 +2511,13 @@ static int command_mixer(void)
         int centered;
         int hard_left;
 
-        render_trigger(ctx, MP7_INSTR_BASS, stereo, frames);
+        render_trigger(ctx, POPS_INSTR_BASS, stereo, frames);
         centered = channel_peak(stereo, frames, 0u);
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-        ctx->voices[MP7_INSTR_BASS].pan_q16 = 0;
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+        ctx->voices[POPS_INSTR_BASS].pan_q16 = 0;
+        pops_process(ctx, stereo, frames);
         hard_left = channel_peak(stereo, frames, 0u);
 
         if ((centered == 0) ||
@@ -2531,10 +2531,10 @@ static int command_mixer(void)
         }
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-    ctx->voices[MP7_INSTR_BASS].pan_q16 = POPPY_Q16_ONE;
-    mp7_process(ctx, stereo, frames);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+    ctx->voices[POPS_INSTR_BASS].pan_q16 = POPS_Q16_ONE;
+    pops_process(ctx, stereo, frames);
     if ((channel_peak(stereo, frames, 1u) == 0) ||
         (channel_peak(stereo, frames, 0u) != 0)) {
         fail("pan 1.0 is not hard right");
@@ -2543,10 +2543,10 @@ static int command_mixer(void)
     }
 
     /* A per-instrument pan moves its own voice only. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_set_instr_pan(ctx, MP7_INSTR_BASS, 0);
-    mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-    mp7_process(ctx, stereo, frames);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_set_instr_pan(ctx, POPS_INSTR_BASS, 0);
+    mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+    pops_process(ctx, stereo, frames);
     if ((channel_peak(stereo, frames, 0u) == 0) ||
         (channel_peak(stereo, frames, 1u) != 0)) {
         fail("a per-instrument pan of 0 does not send its voice hard left");
@@ -2554,10 +2554,10 @@ static int command_mixer(void)
         ok("a per-instrument pan of 0 sends its voice hard left");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_set_instr_pan(ctx, MP7_INSTR_BASS, POPPY_Q16_ONE);
-    mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-    mp7_process(ctx, stereo, frames);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_set_instr_pan(ctx, POPS_INSTR_BASS, POPS_Q16_ONE);
+    mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+    pops_process(ctx, stereo, frames);
     if ((channel_peak(stereo, frames, 1u) == 0) ||
         (channel_peak(stereo, frames, 0u) != 0)) {
         fail("a per-instrument pan of 1.0 does not send its voice hard right");
@@ -2565,10 +2565,10 @@ static int command_mixer(void)
         ok("a per-instrument pan of 1.0 sends its voice hard right");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_set_instr_pan(ctx, MP7_INSTR_BASS, 0);
-    mp7_voice_trigger(&ctx->voices[MP7_INSTR_SNARE_1]);
-    mp7_process(ctx, stereo, frames);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_set_instr_pan(ctx, POPS_INSTR_BASS, 0);
+    mp7_voice_trigger(&ctx->voices[POPS_INSTR_SNARE_1]);
+    pops_process(ctx, stereo, frames);
     if ((channel_peak(stereo, frames, 0u) == 0) ||
         (channel_peak(stereo, frames, 0u) != channel_peak(stereo, frames, 1u))) {
         fail("a per-instrument pan moved another voice");
@@ -2578,26 +2578,26 @@ static int command_mixer(void)
 
     /* The master Volume is applied as 0.5 * value: 1.0 is half scale, 2.0 is
      * unity, and 0 is silence. */
-    if (poppy_mixer_to_q15(INT32_MAX, POPPY_Q16_ONE) != 16384) {
+    if (pops_mixer_to_q15(INT32_MAX, POPS_Q16_ONE) != 16384) {
         fail("Volume 1.0 is not half the panel value as a master gain");
     } else {
         ok("Volume 1.0 applies the 0.5x master gain");
     }
-    if ((poppy_mixer_to_q15(INT32_MAX, 2 * POPPY_Q16_ONE) != 32767) ||
-        (poppy_mixer_to_q15(INT32_MIN, 2 * POPPY_Q16_ONE) != -32768)) {
+    if ((pops_mixer_to_q15(INT32_MAX, 2 * POPS_Q16_ONE) != 32767) ||
+        (pops_mixer_to_q15(INT32_MIN, 2 * POPS_Q16_ONE) != -32768)) {
         fail("the master gain does not saturate at full scale");
     } else {
         ok("the master gain saturates once, at the final Q15 conversion");
     }
 
-    render_trigger(ctx, MP7_INSTR_BASS, stereo, frames);
+    render_trigger(ctx, POPS_INSTR_BASS, stereo, frames);
     {
         int base_peak = channel_peak(stereo, frames, 0u);
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_volume(&ctx->mixer, 2 * POPPY_Q16_ONE);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_volume(&ctx->mixer, 2 * POPS_Q16_ONE);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+        pops_process(ctx, stereo, frames);
         {
             int doubled = channel_peak(stereo, frames, 0u);
             int expected = 2 * base_peak;
@@ -2611,10 +2611,10 @@ static int command_mixer(void)
             }
         }
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_volume(&ctx->mixer, 0);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_volume(&ctx->mixer, 0);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+        pops_process(ctx, stereo, frames);
         if (!stereo_is_silent(stereo, frames)) {
             fail("Volume 0 is not silent");
         } else {
@@ -2624,21 +2624,21 @@ static int command_mixer(void)
 
     /* Balance is a Base-versus-cymbals crossfade. Snare 1 belongs to neither
      * group and must not move. */
-    render_trigger(ctx, MP7_INSTR_BASS, stereo, frames);
+    render_trigger(ctx, POPS_INSTR_BASS, stereo, frames);
     {
         int bass_bottom;
         int bass_top;
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_balance(&ctx->mixer, 0);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_balance(&ctx->mixer, 0);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+        pops_process(ctx, stereo, frames);
         bass_bottom = channel_peak(stereo, frames, 0u);
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_balance(&ctx->mixer, POPPY_Q16_ONE);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_balance(&ctx->mixer, POPS_Q16_ONE);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+        pops_process(ctx, stereo, frames);
         bass_top = channel_peak(stereo, frames, 0u);
 
         /* Balance takes the Base from gain 1.0 down to 0.2, a factor of 5,
@@ -2659,21 +2659,21 @@ static int command_mixer(void)
         }
     }
 
-    render_trigger(ctx, MP7_INSTR_HIHAT, stereo, frames);
+    render_trigger(ctx, POPS_INSTR_HIHAT, stereo, frames);
     {
         int hihat_left;
         int hihat_right;
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_balance(&ctx->mixer, 0);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_HIHAT]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_balance(&ctx->mixer, 0);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_HIHAT]);
+        pops_process(ctx, stereo, frames);
         hihat_left = channel_peak(stereo, frames, 0u);
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_balance(&ctx->mixer, POPPY_Q16_ONE);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_HIHAT]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_balance(&ctx->mixer, POPS_Q16_ONE);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_HIHAT]);
+        pops_process(ctx, stereo, frames);
         hihat_right = channel_peak(stereo, frames, 0u);
 
         /* The cymbal group goes from 0.2 at the left to 1.0 at the right, the
@@ -2694,21 +2694,21 @@ static int command_mixer(void)
         }
     }
 
-    render_trigger(ctx, MP7_INSTR_SNARE_1, stereo, frames);
+    render_trigger(ctx, POPS_INSTR_SNARE_1, stereo, frames);
     {
         int snare_bottom;
         int snare_top;
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_balance(&ctx->mixer, 0);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_SNARE_1]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_balance(&ctx->mixer, 0);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_SNARE_1]);
+        pops_process(ctx, stereo, frames);
         snare_bottom = channel_peak(stereo, frames, 0u);
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_balance(&ctx->mixer, POPPY_Q16_ONE);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_SNARE_1]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_balance(&ctx->mixer, POPS_Q16_ONE);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_SNARE_1]);
+        pops_process(ctx, stereo, frames);
         snare_top = channel_peak(stereo, frames, 0u);
 
         if (snare_bottom != snare_top) {
@@ -2721,16 +2721,16 @@ static int command_mixer(void)
     }
 
     /* A per-instrument gain multiplies its own voice only. */
-    render_trigger(ctx, MP7_INSTR_TAMBOURINE, stereo, frames);
+    render_trigger(ctx, POPS_INSTR_TAMBOURINE, stereo, frames);
     {
         int tamb_default = channel_peak(stereo, frames, 0u);
         int tamb_full;
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_instr_gain(&ctx->mixer, MP7_INSTR_TAMBOURINE,
-                                   POPPY_Q16_ONE);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_TAMBOURINE]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_instr_gain(&ctx->mixer, POPS_INSTR_TAMBOURINE,
+                                   POPS_Q16_ONE);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_TAMBOURINE]);
+        pops_process(ctx, stereo, frames);
         tamb_full = channel_peak(stereo, frames, 0u);
 
         if ((tamb_default == 0) || (tamb_full < tamb_default + tamb_default / 2)) {
@@ -2740,10 +2740,10 @@ static int command_mixer(void)
             ok("the Tambourine instrument gain scales its voice");
         }
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_instr_gain(&ctx->mixer, MP7_INSTR_TAMBOURINE, 0);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_TAMBOURINE]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_instr_gain(&ctx->mixer, POPS_INSTR_TAMBOURINE, 0);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_TAMBOURINE]);
+        pops_process(ctx, stereo, frames);
         if (!stereo_is_silent(stereo, frames)) {
             fail("a zero instrument gain does not silence its voice");
         } else {
@@ -2758,26 +2758,26 @@ static int command_mixer(void)
         int peak_double;
         int peak_half;
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_volume(&ctx->mixer, POPPY_Q16_ONE / 4);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_CLAVES]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_volume(&ctx->mixer, POPS_Q16_ONE / 4);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_CLAVES]);
+        pops_process(ctx, stereo, frames);
         peak_unity = channel_peak(stereo, frames, 0u);
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_volume(&ctx->mixer, POPPY_Q16_ONE / 4);
-        poppy_mixer_set_instr_gain(&ctx->mixer, MP7_INSTR_CLAVES,
-                                   2 * POPPY_Q16_ONE);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_CLAVES]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_volume(&ctx->mixer, POPS_Q16_ONE / 4);
+        pops_mixer_set_instr_gain(&ctx->mixer, POPS_INSTR_CLAVES,
+                                   2 * POPS_Q16_ONE);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_CLAVES]);
+        pops_process(ctx, stereo, frames);
         peak_double = channel_peak(stereo, frames, 0u);
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_volume(&ctx->mixer, POPPY_Q16_ONE / 4);
-        poppy_mixer_set_instr_gain(&ctx->mixer, MP7_INSTR_CLAVES,
-                                   POPPY_Q16_ONE / 2);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_CLAVES]);
-        mp7_process(ctx, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_volume(&ctx->mixer, POPS_Q16_ONE / 4);
+        pops_mixer_set_instr_gain(&ctx->mixer, POPS_INSTR_CLAVES,
+                                   POPS_Q16_ONE / 2);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_CLAVES]);
+        pops_process(ctx, stereo, frames);
         peak_half = channel_peak(stereo, frames, 0u);
 
         if ((peak_unity == 0) ||
@@ -2800,21 +2800,21 @@ static int command_mixer(void)
         const size_t half = frames / 4u;
         struct mp7_context_s *ref = context_new();
 
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_instr_gain(&ctx->mixer, MP7_INSTR_CYMBAL_1, 0);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_CYMBAL_1]);
-        mp7_process(ctx, stereo, half); /* the muted first half */
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_instr_gain(&ctx->mixer, POPS_INSTR_CYMBAL_1, 0);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_CYMBAL_1]);
+        pops_process(ctx, stereo, half); /* the muted first half */
 
-        mp7_init(ref, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_instr_gain(&ref->mixer, MP7_INSTR_CYMBAL_1,
-                                   POPPY_Q16_ONE);
-        mp7_voice_trigger(&ref->voices[MP7_INSTR_CYMBAL_1]);
-        mp7_process(ref, other, half); /* the reference first half, discarded */
+        mp7_init(ref, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_instr_gain(&ref->mixer, POPS_INSTR_CYMBAL_1,
+                                   POPS_Q16_ONE);
+        mp7_voice_trigger(&ref->voices[POPS_INSTR_CYMBAL_1]);
+        pops_process(ref, other, half); /* the reference first half, discarded */
 
-        poppy_mixer_set_instr_gain(&ctx->mixer, MP7_INSTR_CYMBAL_1,
-                                   POPPY_Q16_ONE);
-        mp7_process(ctx, stereo, half);
-        mp7_process(ref, other, half);
+        pops_mixer_set_instr_gain(&ctx->mixer, POPS_INSTR_CYMBAL_1,
+                                   POPS_Q16_ONE);
+        pops_process(ctx, stereo, half);
+        pops_process(ref, other, half);
 
         if (memcmp(stereo, other, half * 2u * sizeof(int16_t)) != 0) {
             fail("muting an active voice changed its envelope or filter state");
@@ -2828,11 +2828,11 @@ static int command_mixer(void)
     {
         unsigned int v;
 
-        for (v = 0u; v < (unsigned int)MP7_INSTR_COUNT; v++) {
-            mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-            poppy_mixer_set_instr_gain(&ctx->mixer, v, 0);
+        for (v = 0u; v < (unsigned int)POPS_INSTR_COUNT; v++) {
+            mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+            pops_mixer_set_instr_gain(&ctx->mixer, v, 0);
             mp7_voice_trigger(&ctx->voices[v]);
-            mp7_process(ctx, stereo, frames);
+            pops_process(ctx, stereo, frames);
             if (!stereo_is_silent(stereo, frames)) {
                 printf("FAIL: instrument gain %u did not silence its voice\n", v);
                 failures++;
@@ -2840,11 +2840,11 @@ static int command_mixer(void)
         }
 
         /* One instrument's gain must not change another voice. */
-        render_trigger(ctx, MP7_INSTR_BASS, stereo, frames);
-        mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-        poppy_mixer_set_instr_gain(&ctx->mixer, MP7_INSTR_SNARE_1, 0);
-        mp7_voice_trigger(&ctx->voices[MP7_INSTR_BASS]);
-        mp7_process(ctx, other, frames);
+        render_trigger(ctx, POPS_INSTR_BASS, stereo, frames);
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_mixer_set_instr_gain(&ctx->mixer, POPS_INSTR_SNARE_1, 0);
+        mp7_voice_trigger(&ctx->voices[POPS_INSTR_BASS]);
+        pops_process(ctx, other, frames);
         if (memcmp(stereo, other, frames * 2u * sizeof(int16_t)) != 0) {
             fail("an instrument gain changed another voice");
         } else {
@@ -2856,12 +2856,12 @@ static int command_mixer(void)
      * is half as loud, and the per-instrument gain keeps its whole 0..2 range
      * on top of the halved signal: its top is twice the halved signal. */
     {
-        static const mp7_instr trimmed[3] = {
-            MP7_INSTR_COWBELL, MP7_INSTR_SMALL_BONGO, MP7_INSTR_LARGE_BONGO
+        static const pops_instr trimmed[3] = {
+            POPS_INSTR_COWBELL, POPS_INSTR_SMALL_BONGO, POPS_INSTR_LARGE_BONGO
         };
         /* An instrument of the same engine that carries no trim. */
-        static const mp7_instr plain[3] = {
-            MP7_INSTR_CONGA, MP7_INSTR_BASS, MP7_INSTR_CLAVES
+        static const pops_instr plain[3] = {
+            POPS_INSTR_CONGA, POPS_INSTR_BASS, POPS_INSTR_CLAVES
         };
         unsigned int h;
 
@@ -2875,13 +2875,13 @@ static int command_mixer(void)
             /* The trim sits at the engine output, so the engine of the same
              * voice plays the untrimmed signal when the instrument is not
              * one of the trimmed ones. */
-            mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
+            mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
             mp7_voice_trigger(voice);
             for (s = 0u; s < 32u; s++) {
                 trimmed_out[s] = mp7_engine_process(voice);
             }
 
-            mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
+            mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
             voice = &ctx->voices[trimmed[h]];
             voice->instr = plain[h];
             mp7_voice_trigger(voice);
@@ -2910,8 +2910,8 @@ static int command_mixer(void)
     /* The trim is on the voice, not on the gain: the per-instrument gain
      * still scales the trimmed signal over its whole 0..2 range. */
     {
-        static const mp7_instr trimmed[3] = {
-            MP7_INSTR_COWBELL, MP7_INSTR_SMALL_BONGO, MP7_INSTR_LARGE_BONGO
+        static const pops_instr trimmed[3] = {
+            POPS_INSTR_COWBELL, POPS_INSTR_SMALL_BONGO, POPS_INSTR_LARGE_BONGO
         };
         unsigned int h;
 
@@ -2922,11 +2922,11 @@ static int command_mixer(void)
             render_trigger(ctx, trimmed[h], stereo, frames);
             full_peak = channel_peak(stereo, frames, 0u);
 
-            mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-            poppy_mixer_set_instr_gain(&ctx->mixer, trimmed[h],
-                                       POPPY_Q16_ONE / 2);
+            mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+            pops_mixer_set_instr_gain(&ctx->mixer, trimmed[h],
+                                       POPS_Q16_ONE / 2);
             mp7_voice_trigger(&ctx->voices[trimmed[h]]);
-            mp7_process(ctx, other, frames);
+            pops_process(ctx, other, frames);
             half_gain_peak = channel_peak(other, frames, 0u);
 
             /* The output is rounded to Q15, so the peaks can be a unit or
@@ -2959,27 +2959,27 @@ static int command_api(void)
     /* The allocation helper initializes the context and can be released. */
     {
         struct mp7_context_s *created =
-            (struct mp7_context_s *)mp7_create_context(0);
+            (struct mp7_context_s *)pops_create_context(0);
         struct mp7_context_s *second =
-            (struct mp7_context_s *)mp7_create_context(22050);
+            (struct mp7_context_s *)pops_create_context(22050);
         int16_t block[64 * 2];
 
         if ((created == 0) ||
-            (created->sample_rate != MP7_DEFAULT_SAMPLE_RATE)) {
-            fail("mp7_create_context() did not initialize a default-rate context");
+            (created->sample_rate != POPS_DEFAULT_SAMPLE_RATE)) {
+            fail("pops_create_context() did not initialize a default-rate context");
         } else {
-            ok("mp7_create_context() allocates and initializes a context");
+            ok("pops_create_context() allocates and initializes a context");
         }
 
         if ((second == 0) || (second->sample_rate != 22050u)) {
-            fail("mp7_create_context() did not take the requested sample rate");
+            fail("pops_create_context() did not take the requested sample rate");
         } else {
-            ok("mp7_create_context() takes the requested sample rate");
+            ok("pops_create_context() takes the requested sample rate");
         }
 
         /* Two contexts live at the same time and do not disturb each other. */
         if ((created != 0) && (second != 0) &&
-            (created->sample_rate == MP7_DEFAULT_SAMPLE_RATE) &&
+            (created->sample_rate == POPS_DEFAULT_SAMPLE_RATE) &&
             (second->sample_rate == 22050u)) {
             ok("two contexts live at the same time with their own settings");
         } else {
@@ -2991,8 +2991,8 @@ static int command_api(void)
             int non_zero = 0;
 
             memset(block, 0, sizeof(block));
-            mp7_trigger((mp7_context)created, MP7_INSTR_BASS, 100);
-            mp7_process((mp7_context)created, block, 64);
+            pops_trigger((pops_context)created, POPS_INSTR_BASS, 100);
+            pops_process((pops_context)created, block, 64);
             for (i = 0u; i < 64u * 2u; i++) {
                 if (block[i] != 0) {
                     non_zero = 1;
@@ -3006,21 +3006,21 @@ static int command_api(void)
             }
         }
 
-        mp7_destroy_context((mp7_context)second);
-        mp7_destroy_context((mp7_context)created);
+        pops_destroy_context((pops_context)second);
+        pops_destroy_context((pops_context)created);
 
         /* A null context is ignored. */
-        mp7_destroy_context(0);
-        ok("mp7_destroy_context() ignores a null context");
+        pops_destroy_context(0);
+        ok("pops_destroy_context() ignores a null context");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
 
     /* Version reporting. */
-    if (mp7_version_number() != MP7_VERSION_NUMBER) {
-        fail("mp7_version_number() does not match MP7_VERSION_NUMBER");
+    if (pops_version_number() != POPS_VERSION_NUMBER) {
+        fail("pops_version_number() does not match POPS_VERSION_NUMBER");
     } else {
-        ok("mp7_version_number() returns the header version");
+        ok("pops_version_number() returns the header version");
     }
 
     /* Factory-pattern access. The view always carries the whole 64-column
@@ -3028,14 +3028,14 @@ static int command_api(void)
      * shared percussion layer merged into it, so the consumer never has to
      * know the stored period. */
     {
-        struct mp7_pattern_view view;
+        struct pops_pattern_view view;
         int bad = 0;
 
-        for (i = 0u; i < (unsigned int)MP7_RHYTHM_COUNT; i++) {
+        for (i = 0u; i < (unsigned int)POPS_RHYTHM_COUNT; i++) {
             unsigned int column;
 
-            mp7_get_selection_pattern(ctx, mp7_rhythm_bank((mp7_rhythm)i),
-                                       mp7_rhythm_button_bit((mp7_rhythm)i),
+            pops_get_selection_pattern(ctx, pops_rhythm_bank((pops_rhythm)i),
+                                       pops_rhythm_button_bit((pops_rhythm)i),
                                        &view);
             if (view.enable != mp7_factory_rhythms[i].enable) {
                 bad = 1;
@@ -3050,7 +3050,7 @@ static int command_api(void)
                 bad = 1;
                 break;
             }
-            for (column = 0u; column < MP7_PATTERN_COLUMNS; column++) {
+            for (column = 0u; column < POPS_PATTERN_COLUMNS; column++) {
                 if (view.notes[column] !=
                     (pattern_note(&mp7_factory_rhythms[i], column) |
                      percussion_note(column))) {
@@ -3073,11 +3073,11 @@ static int command_api(void)
             for (rhythm = 0u; rhythm < 10u; rhythm++) {
                 expect_enable &= mp7_factory_rhythms[rhythm].enable;
             }
-            mp7_get_selection_pattern(ctx, MP7_BANK_A, 0x03FFu, &view);
+            pops_get_selection_pattern(ctx, POPS_BANK_A, 0x03FFu, &view);
             if (view.enable != expect_enable) {
                 bad = 1;
             }
-            if (view.timesig != MP7_TIMESIG_NONE) {
+            if (view.timesig != POPS_TIMESIG_NONE) {
                 bad = 1;
             }
         }
@@ -3091,16 +3091,16 @@ static int command_api(void)
 
     /* Every time signature has its own step-enable mask, and an unknown one
      * has none. */
-    if ((mp7_timesig_enable_mask(MP7_TIMESIG_4_4) != ~(uint64_t)0) ||
-        (mp7_timesig_enable_mask(MP7_TIMESIG_3_4) !=
+    if ((pops_timesig_enable_mask(POPS_TIMESIG_4_4) != ~(uint64_t)0) ||
+        (pops_timesig_enable_mask(POPS_TIMESIG_3_4) !=
          UINT64_C(0xFF0F0FFFFF0F0FFF)) ||
-        (mp7_timesig_enable_mask(MP7_TIMESIG_5_4T) !=
+        (pops_timesig_enable_mask(POPS_TIMESIG_5_4T) !=
          UINT64_C(0x0F0F3F3F0F0F3F3F)) ||
-        (mp7_timesig_enable_mask(MP7_TIMESIG_7_4) !=
+        (pops_timesig_enable_mask(POPS_TIMESIG_7_4) !=
          UINT64_C(0x00FFFFFFFFFFFFFF)) ||
-        (mp7_timesig_enable_mask(MP7_TIMESIG_2_4) != MP7_PATTERN_COMPOUND_MASK) ||
-        (mp7_timesig_enable_mask(MP7_TIMESIG_6_8T) != MP7_PATTERN_COMPOUND_MASK) ||
-        (mp7_timesig_enable_mask((mp7_timesig)MP7_TIMESIG_COUNT) != 0u)) {
+        (pops_timesig_enable_mask(POPS_TIMESIG_2_4) != MP7_PATTERN_COMPOUND_MASK) ||
+        (pops_timesig_enable_mask(POPS_TIMESIG_6_8T) != MP7_PATTERN_COMPOUND_MASK) ||
+        (pops_timesig_enable_mask((pops_timesig)POPS_TIMESIG_COUNT) != 0u)) {
         fail("the time signature masks are wrong");
     } else {
         ok("every time signature has its own enable mask");
@@ -3108,12 +3108,12 @@ static int command_api(void)
 
     /* The grid of a signature follows its mask: the 2/4, the 5/4 and the 6/8
      * play compound, the others play straight. */
-    if ((mp7_mask_is_compound(mp7_timesig_enable_mask(MP7_TIMESIG_2_4)) != 1u) ||
-        (mp7_mask_is_compound(mp7_timesig_enable_mask(MP7_TIMESIG_6_8T)) != 1u) ||
-        (mp7_mask_is_compound(mp7_timesig_enable_mask(MP7_TIMESIG_5_4T)) != 1u) ||
-        (mp7_mask_is_compound(mp7_timesig_enable_mask(MP7_TIMESIG_3_4)) != 0u) ||
-        (mp7_mask_is_compound(mp7_timesig_enable_mask(MP7_TIMESIG_4_4)) != 0u) ||
-        (mp7_mask_is_compound(mp7_timesig_enable_mask(MP7_TIMESIG_7_4)) != 0u)) {
+    if ((mp7_mask_is_compound(pops_timesig_enable_mask(POPS_TIMESIG_2_4)) != 1u) ||
+        (mp7_mask_is_compound(pops_timesig_enable_mask(POPS_TIMESIG_6_8T)) != 1u) ||
+        (mp7_mask_is_compound(pops_timesig_enable_mask(POPS_TIMESIG_5_4T)) != 1u) ||
+        (mp7_mask_is_compound(pops_timesig_enable_mask(POPS_TIMESIG_3_4)) != 0u) ||
+        (mp7_mask_is_compound(pops_timesig_enable_mask(POPS_TIMESIG_4_4)) != 0u) ||
+        (mp7_mask_is_compound(pops_timesig_enable_mask(POPS_TIMESIG_7_4)) != 0u)) {
         fail("the grid of a time signature is wrong");
     } else {
         ok("2/4, 5/4 and 6/8 play compound; 3/4, 4/4 and 7/4 play straight");
@@ -3121,18 +3121,18 @@ static int command_api(void)
 
     /* Velocity 0 is note-off. It releases the gated Guiro and leaves a
      * one-shot voice running. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_trigger(ctx, MP7_INSTR_GUIRO, 100u);
-    mp7_trigger(ctx, MP7_INSTR_GUIRO, 0u);
-    if (ctx->voices[MP7_INSTR_GUIRO].amp_env.stage != POPPY_ENV_RELEASE) {
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_trigger(ctx, POPS_INSTR_GUIRO, 100u);
+    pops_trigger(ctx, POPS_INSTR_GUIRO, 0u);
+    if (ctx->voices[POPS_INSTR_GUIRO].amp_env.stage != POPS_ENV_RELEASE) {
         fail("a zero-velocity Guiro trigger did not release the voice");
     } else {
         ok("a zero-velocity trigger releases the Guiro");
     }
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_trigger(ctx, MP7_INSTR_BASS, 100u);
-    mp7_trigger(ctx, MP7_INSTR_BASS, 0u);
-    if (ctx->voices[MP7_INSTR_BASS].active == 0u) {
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_trigger(ctx, POPS_INSTR_BASS, 100u);
+    pops_trigger(ctx, POPS_INSTR_BASS, 0u);
+    if (ctx->voices[POPS_INSTR_BASS].active == 0u) {
         fail("note-off stopped a one-shot instrument");
     } else {
         ok("note-off leaves a one-shot instrument running");
@@ -3140,9 +3140,9 @@ static int command_api(void)
 
     /* The Guiro gate has two holders: the pattern's own gate and the note
      * the caller triggers. Neither one may cut the other off. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
-    mp7_trigger(ctx, MP7_INSTR_GUIRO, 100u);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
+    pops_trigger(ctx, POPS_INSTR_GUIRO, 100u);
     {
         const size_t column_samples =
             (size_t)ctx->sequencer.beat_samples / 8u + 1u;
@@ -3155,25 +3155,25 @@ static int command_api(void)
         }
         if (ctx->sequencer.guiro_gated != 0u) {
             fail("the pattern did not close its Guiro gate on a rest column");
-        } else if (ctx->voices[MP7_INSTR_GUIRO].amp_env.stage == POPPY_ENV_RELEASE) {
+        } else if (ctx->voices[POPS_INSTR_GUIRO].amp_env.stage == POPS_ENV_RELEASE) {
             fail("the pattern released a Guiro note the caller holds");
         } else {
             ok("the pattern does not cut off a Guiro note the caller holds");
         }
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     mp7_pattern_tick(ctx); /* column 0 opens the pattern's gate */
-    mp7_trigger(ctx, MP7_INSTR_GUIRO, 0u);
-    if (ctx->voices[MP7_INSTR_GUIRO].amp_env.stage == POPPY_ENV_RELEASE) {
+    pops_trigger(ctx, POPS_INSTR_GUIRO, 0u);
+    if (ctx->voices[POPS_INSTR_GUIRO].amp_env.stage == POPS_ENV_RELEASE) {
         fail("a caller's note-off cut off the pattern's Guiro gate");
     } else {
         ok("a caller's note-off does not cut off the pattern's Guiro gate");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     mp7_pattern_tick(ctx); /* column 0 opens the pattern's gate */
     {
         unsigned int sample;
@@ -3181,14 +3181,14 @@ static int command_api(void)
         /* The Guiro attack is 1 ms, so the gate reaches its hold stage well
          * within this many samples. */
         for (sample = 0u; sample < 4410u; sample++) {
-            (void)mp7_voice_process(&ctx->voices[MP7_INSTR_GUIRO]);
+            (void)mp7_voice_process(&ctx->voices[POPS_INSTR_GUIRO]);
         }
     }
-    if (ctx->voices[MP7_INSTR_GUIRO].amp_env.stage != POPPY_ENV_HOLD) {
+    if (ctx->voices[POPS_INSTR_GUIRO].amp_env.stage != POPS_ENV_HOLD) {
         fail("the pattern's Guiro gate did not reach its hold stage");
     } else {
-        mp7_trigger(ctx, MP7_INSTR_GUIRO, 100u);
-        if (ctx->voices[MP7_INSTR_GUIRO].amp_env.stage != POPPY_ENV_HOLD) {
+        pops_trigger(ctx, POPS_INSTR_GUIRO, 100u);
+        if (ctx->voices[POPS_INSTR_GUIRO].amp_env.stage != POPS_ENV_HOLD) {
             fail("a caller's Guiro note restarted the pattern's ratchet");
         } else {
             ok("a caller's Guiro note does not restart the pattern's ratchet");
@@ -3196,64 +3196,64 @@ static int command_api(void)
     }
 
     /* Rhythm selection mirrors the panel: one bank lever plus ten buttons. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    if (mp7_rhythm_running(ctx)) {
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    if (pops_rhythm_running(ctx)) {
         fail("the sequencer is running before the first selection");
     }
 
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
-    if (!mp7_rhythm_running(ctx) ||
-        (ctx->sequencer.selected != mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ))) {
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+    if (!pops_rhythm_running(ctx) ||
+        (ctx->sequencer.selected != pops_rhythm_button_bit(POPS_RHYTHM_WALTZ))) {
         fail("the Waltz button did not select Waltz in bank A");
     }
 
-    mp7_select_rhythm(ctx, MP7_BANK_A,
-        mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) | mp7_rhythm_button_bit(MP7_RHYTHM_MARCH_2_4));
+    pops_select_rhythm(ctx, POPS_BANK_A,
+        pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) | pops_rhythm_button_bit(POPS_RHYTHM_MARCH_2_4));
     if ((ctx->sequencer.selected !=
-         (mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) |
-          mp7_rhythm_button_bit(MP7_RHYTHM_MARCH_2_4))) ||
+         (pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) |
+          pops_rhythm_button_bit(POPS_RHYTHM_MARCH_2_4))) ||
         (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_COMPOUND)) {
         fail("two buttons in one bank did not combine their rhythms");
     }
 
     /* Keys 10..14 do not exist: they are ignored. */
-    mp7_select_rhythm(ctx, MP7_BANK_A, 0x7C00u);
+    pops_select_rhythm(ctx, POPS_BANK_A, 0x7C00u);
     if ((ctx->sequencer.selected != 0u) ||
         (ctx->sequencer.enable != ~(uint64_t)0)) {
         fail("button-mask bits above button 9 are not ignored");
     }
 
-    mp7_stop_rhythms(ctx);
-    if (mp7_rhythm_running(ctx) || (ctx->sequencer.selected != 0u) ||
+    pops_stop_rhythms(ctx);
+    if (pops_rhythm_running(ctx) || (ctx->sequencer.selected != 0u) ||
         (ctx->sequencer.enable != 0u)) {
-        fail("mp7_stop_rhythms() did not stop the sequencer");
+        fail("pops_stop_rhythms() did not stop the sequencer");
     }
     if (failures == 0) {
         ok("the bank/button selection combines buttons and Clear stops the sequencer");
     }
 
     /* Mapping a rhythm name to its panel bank and button bit. */
-    if ((mp7_rhythm_bank(MP7_RHYTHM_WALTZ) != MP7_BANK_A) ||
-        (mp7_rhythm_bank(MP7_RHYTHM_JAZZ_WALTZ) != MP7_BANK_B) ||
-        (mp7_rhythm_bank(MP7_RHYTHM_LATIN_SWING) != MP7_BANK_B) ||
-        (mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) != 1u) ||
-        (mp7_rhythm_button_bit(MP7_RHYTHM_SAMBA) != 2u) ||
-        (mp7_rhythm_button_bit(MP7_RHYTHM_JAZZ_WALTZ) != 1u) ||
-        (mp7_rhythm_button_bit(MP7_RHYTHM_LATIN_SWING) != 512u) ||
-        (mp7_rhythm_bank((mp7_rhythm)MP7_RHYTHM_COUNT) != MP7_BANK_A) ||
-        (mp7_rhythm_button_bit((mp7_rhythm)MP7_RHYTHM_COUNT) != 0u)) {
+    if ((pops_rhythm_bank(POPS_RHYTHM_WALTZ) != POPS_BANK_A) ||
+        (pops_rhythm_bank(POPS_RHYTHM_JAZZ_WALTZ) != POPS_BANK_B) ||
+        (pops_rhythm_bank(POPS_RHYTHM_LATIN_SWING) != POPS_BANK_B) ||
+        (pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) != 1u) ||
+        (pops_rhythm_button_bit(POPS_RHYTHM_SAMBA) != 2u) ||
+        (pops_rhythm_button_bit(POPS_RHYTHM_JAZZ_WALTZ) != 1u) ||
+        (pops_rhythm_button_bit(POPS_RHYTHM_LATIN_SWING) != 512u) ||
+        (pops_rhythm_bank((pops_rhythm)POPS_RHYTHM_COUNT) != POPS_BANK_A) ||
+        (pops_rhythm_button_bit((pops_rhythm)POPS_RHYTHM_COUNT) != 0u)) {
         fail("the rhythm-to-bank/button mapping is wrong");
     } else {
         ok("a rhythm maps to the correct bank and button bit");
     }
 
     /* The same button in bank B selects the corresponding upper-bank rhythm. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_B, 1u);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_B, 1u);
     if (ctx->sequencer.selected != ((uint32_t)1u << 10)) {
         fail("bank B button 0 did not select Jazz Waltz");
     }
-    mp7_select_rhythm(ctx, MP7_BANK_A, 1u);
+    pops_select_rhythm(ctx, POPS_BANK_A, 1u);
     if (ctx->sequencer.selected != 1u) {
         fail("bank A button 0 did not select Waltz");
     } else {
@@ -3262,9 +3262,9 @@ static int command_api(void)
 
     /* An immediate change keeps the playhead. Selecting no buttons keeps the
      * transport running and leaves only the Tambourine/Guiro/Quijada layer. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A,
-                      mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A,
+                      pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     {
         uint8_t column;
         uint8_t column_fired;
@@ -3280,27 +3280,27 @@ static int command_api(void)
         column_fired = ctx->sequencer.column_fired;
         position = ctx->sequencer.column_pos;
 
-        mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-            mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
+        pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+            pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
 
         if ((ctx->sequencer.column != column) ||
             (ctx->sequencer.column_fired != column_fired) ||
             (ctx->sequencer.column_pos != position)) {
             fail("an immediate rhythm change restarted the playhead");
         } else if (ctx->sequencer.selected !=
-                   (mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-                    mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ))) {
+                   (pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+                    pops_rhythm_button_bit(POPS_RHYTHM_WALTZ))) {
             fail("an immediate rhythm change did not combine the grids");
         } else {
             ok("an immediate rhythm change preserves the playhead");
         }
 
-        mp7_select_rhythm(ctx, MP7_BANK_A, 0u); /* no button pressed */
+        pops_select_rhythm(ctx, POPS_BANK_A, 0u); /* no button pressed */
 
         if ((ctx->sequencer.column != column) ||
             (ctx->sequencer.column_fired != column_fired) ||
             (ctx->sequencer.column_pos != position) ||
-            !mp7_rhythm_running(ctx) ||
+            !pops_rhythm_running(ctx) ||
             (ctx->sequencer.selected != 0u)) {
             fail("selecting no rhythm buttons restarted or stopped the sequencer");
         }
@@ -3326,21 +3326,21 @@ static int command_api(void)
 
     /* The no-button layer triggers Tambourine and Guiro at column 0 and leaves
      * the main instruments silent. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, 0u);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, 0u);
     mp7_pattern_tick(ctx);
-    if ((ctx->voices[MP7_INSTR_TAMBOURINE].active == 0u) ||
-        (ctx->voices[MP7_INSTR_GUIRO].active == 0u) ||
-        (ctx->voices[MP7_INSTR_BASS].active != 0u) ||
-        (ctx->voices[MP7_INSTR_SNARE_1].active != 0u)) {
+    if ((ctx->voices[POPS_INSTR_TAMBOURINE].active == 0u) ||
+        (ctx->voices[POPS_INSTR_GUIRO].active == 0u) ||
+        (ctx->voices[POPS_INSTR_BASS].active != 0u) ||
+        (ctx->voices[POPS_INSTR_SNARE_1].active != 0u)) {
         fail("the no-button layer does not fire only the percussion voices");
     } else {
         ok("the no-button layer fires Tambourine and Guiro, not the main rhythm");
     }
 
     /* A queued change waits for the pattern cycle to wrap. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     {
         unsigned int t;
 
@@ -3348,13 +3348,13 @@ static int command_api(void)
             mp7_pattern_tick(ctx);
         }
 
-        mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-            mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) | MP7_APPLY_NEXT_CYCLE);
-        if ((ctx->sequencer.selected != mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1)) ||
+        pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+            pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) | POPS_APPLY_NEXT_CYCLE);
+        if ((ctx->sequencer.selected != pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1)) ||
             (ctx->sequencer.pending_valid == 0u) ||
             (ctx->sequencer.pending_selected !=
-             (mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-              mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ)))) {
+             (pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+              pops_rhythm_button_bit(POPS_RHYTHM_WALTZ)))) {
             fail("a queued rhythm change did not stay pending");
         } else {
             uint8_t previous = ctx->sequencer.column;
@@ -3372,8 +3372,8 @@ static int command_api(void)
             if (!wrapped) {
                 fail("the pattern never wrapped while a change was queued");
             } else if ((ctx->sequencer.selected !=
-                        (mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-                         mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ))) ||
+                        (pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+                         pops_rhythm_button_bit(POPS_RHYTHM_WALTZ))) ||
                        (ctx->sequencer.pending_valid != 0u) ||
                        (ctx->sequencer.column != 0u)) {
                 fail("a queued rhythm change was not applied at the cycle wrap");
@@ -3385,36 +3385,36 @@ static int command_api(void)
 
     /* A queued selection replaces any earlier pending selection; an immediate
      * set cancels it. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     mp7_pattern_tick(ctx);
-    mp7_select_rhythm(ctx, MP7_BANK_A,
-        mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-        mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) |
-        mp7_rhythm_button_bit(MP7_RHYTHM_SAMBA) |
-        MP7_APPLY_NEXT_CYCLE);
-    mp7_select_rhythm(ctx, MP7_BANK_A,
-        mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-        mp7_rhythm_button_bit(MP7_RHYTHM_SAMBA) |
-        MP7_APPLY_NEXT_CYCLE);
+    pops_select_rhythm(ctx, POPS_BANK_A,
+        pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+        pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) |
+        pops_rhythm_button_bit(POPS_RHYTHM_SAMBA) |
+        POPS_APPLY_NEXT_CYCLE);
+    pops_select_rhythm(ctx, POPS_BANK_A,
+        pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+        pops_rhythm_button_bit(POPS_RHYTHM_SAMBA) |
+        POPS_APPLY_NEXT_CYCLE);
     if ((ctx->sequencer.pending_selected !=
-         (mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) |
-          mp7_rhythm_button_bit(MP7_RHYTHM_SAMBA))) ||
+         (pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) |
+          pops_rhythm_button_bit(POPS_RHYTHM_SAMBA))) ||
         (ctx->sequencer.pending_valid == 0u)) {
         fail("a later queued selection did not replace the pending one");
     }
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     if (ctx->sequencer.pending_valid != 0u) {
         fail("an immediate selection did not cancel the pending change");
     } else {
         ok("queued selections are replaced by later queues or immediate sets");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     mp7_pattern_tick(ctx);
-    mp7_select_rhythm(ctx, MP7_BANK_A, MP7_APPLY_NEXT_CYCLE); /* queue the no-button layer */
-    if ((ctx->sequencer.selected != mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1)) ||
+    pops_select_rhythm(ctx, POPS_BANK_A, POPS_APPLY_NEXT_CYCLE); /* queue the no-button layer */
+    if ((ctx->sequencer.selected != pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1)) ||
         (ctx->sequencer.pending_valid == 0u) ||
         (ctx->sequencer.pending_selected != 0u)) {
         fail("a queued no-button selection did not stay pending");
@@ -3431,7 +3431,7 @@ static int command_api(void)
         }
         if ((ctx->sequencer.selected != 0u) ||
             (ctx->sequencer.pending_valid != 0u) ||
-            !mp7_rhythm_running(ctx) ||
+            !pops_rhythm_running(ctx) ||
             (ctx->sequencer.enable != ~(uint64_t)0) ||
             (ctx->sequencer.subdivision != (uint8_t)MP7_SUBDIV_STRAIGHT)) {
             fail("a queued no-button selection did not switch to the percussion layer");
@@ -3441,13 +3441,13 @@ static int command_api(void)
     }
 
     /* An immediate stop cancels a pending change and resets the transport. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     mp7_pattern_tick(ctx);
-    mp7_select_rhythm(ctx, MP7_BANK_A,
-        mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) | MP7_APPLY_NEXT_CYCLE);
-    mp7_stop_rhythms(ctx);
-    if (mp7_rhythm_running(ctx) ||
+    pops_select_rhythm(ctx, POPS_BANK_A,
+        pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) | POPS_APPLY_NEXT_CYCLE);
+    pops_stop_rhythms(ctx);
+    if (pops_rhythm_running(ctx) ||
         (ctx->sequencer.pending_valid != 0u) ||
         (ctx->sequencer.selected != 0u) ||
         (ctx->sequencer.enable != 0u)) {
@@ -3457,20 +3457,20 @@ static int command_api(void)
     }
 
     /* Queueing while stopped has no cycle to wait for, so it starts now. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A,
-        mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) | MP7_APPLY_NEXT_CYCLE);
-    if ((ctx->sequencer.selected != mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ)) ||
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A,
+        pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) | POPS_APPLY_NEXT_CYCLE);
+    if ((ctx->sequencer.selected != pops_rhythm_button_bit(POPS_RHYTHM_WALTZ)) ||
         (ctx->sequencer.pending_valid != 0u) ||
-        !mp7_rhythm_running(ctx)) {
+        !pops_rhythm_running(ctx)) {
         fail("queueing a rhythm while stopped did not start it");
     } else {
         ok("queueing a rhythm while stopped starts it immediately");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, MP7_APPLY_NEXT_CYCLE);
-    if (!mp7_rhythm_running(ctx) || (ctx->sequencer.selected != 0u) ||
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, POPS_APPLY_NEXT_CYCLE);
+    if (!pops_rhythm_running(ctx) || (ctx->sequencer.selected != 0u) ||
         (ctx->sequencer.enable != ~(uint64_t)0)) {
         fail("queueing no buttons while stopped did not start the percussion layer");
     } else {
@@ -3478,121 +3478,121 @@ static int command_api(void)
     }
 
     /* Tempo clamping and the beat interval. */
-    mp7_set_tempo(ctx, 120u);
+    pops_set_tempo(ctx, 120u);
     if ((ctx->sequencer.tempo != 120u) || (ctx->sequencer.beat_samples != 22050u)) {
-        fail("mp7_set_tempo(120) did not give a 22050-sample beat");
+        fail("pops_set_tempo(120) did not give a 22050-sample beat");
     }
-    mp7_set_tempo(ctx, 0u);
+    pops_set_tempo(ctx, 0u);
     if (ctx->sequencer.tempo != 1u) {
-        fail("mp7_set_tempo(0) is not clamped to 1 BPM");
+        fail("pops_set_tempo(0) is not clamped to 1 BPM");
     }
-    mp7_set_tempo(ctx, 1000u);
+    pops_set_tempo(ctx, 1000u);
     if (ctx->sequencer.tempo != 240u) {
-        fail("mp7_set_tempo(1000) is not clamped to 240 BPM");
+        fail("pops_set_tempo(1000) is not clamped to 240 BPM");
     }
     if (failures == 0) {
-        ok("mp7_set_tempo() clamps to 1..240 and builds the beat");
+        ok("pops_set_tempo() clamps to 1..240 and builds the beat");
     }
 
     /* Mix controls. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_set_volume(ctx, 500000);
-    if (ctx->mixer.panel_volume_q16 != 4 * POPPY_Q16_ONE) {
-        fail("mp7_set_volume() does not clamp to 4.0");
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_set_volume(ctx, 500000);
+    if (ctx->mixer.panel_volume_q16 != 4 * POPS_Q16_ONE) {
+        fail("pops_set_volume() does not clamp to 4.0");
     }
-    mp7_set_volume(ctx, -1);
+    pops_set_volume(ctx, -1);
     if (ctx->mixer.panel_volume_q16 != 0) {
-        fail("mp7_set_volume() does not clamp to 0");
+        fail("pops_set_volume() does not clamp to 0");
     }
-    mp7_set_balance(ctx, 100000);
-    if (ctx->mixer.balance_q16 != POPPY_Q16_ONE) {
-        fail("mp7_set_balance() does not clamp to 1.0");
+    pops_set_balance(ctx, 100000);
+    if (ctx->mixer.balance_q16 != POPS_Q16_ONE) {
+        fail("pops_set_balance() does not clamp to 1.0");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_set_instr_gain(ctx, MP7_INSTR_QUIJADA, 100000);
-    if (ctx->mixer.instr_gain_q16[MP7_INSTR_QUIJADA] != 100000) {
-        fail("mp7_set_instr_gain() does not keep a gain below 2.0");
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_set_instr_gain(ctx, POPS_INSTR_QUIJADA, 100000);
+    if (ctx->mixer.instr_gain_q16[POPS_INSTR_QUIJADA] != 100000) {
+        fail("pops_set_instr_gain() does not keep a gain below 2.0");
     }
-    mp7_set_instr_gain(ctx, MP7_INSTR_QUIJADA, 3 * POPPY_Q16_ONE);
-    if (ctx->mixer.instr_gain_q16[MP7_INSTR_QUIJADA] != 2 * POPPY_Q16_ONE) {
-        fail("mp7_set_instr_gain() does not clamp Quijada to 2.0");
+    pops_set_instr_gain(ctx, POPS_INSTR_QUIJADA, 3 * POPS_Q16_ONE);
+    if (ctx->mixer.instr_gain_q16[POPS_INSTR_QUIJADA] != 2 * POPS_Q16_ONE) {
+        fail("pops_set_instr_gain() does not clamp Quijada to 2.0");
     }
-    mp7_set_instr_gain(ctx, MP7_INSTR_GUIRO, -1);
-    if (ctx->mixer.instr_gain_q16[MP7_INSTR_GUIRO] != 0) {
-        fail("mp7_set_instr_gain() does not clamp Guiro to 0");
+    pops_set_instr_gain(ctx, POPS_INSTR_GUIRO, -1);
+    if (ctx->mixer.instr_gain_q16[POPS_INSTR_GUIRO] != 0) {
+        fail("pops_set_instr_gain() does not clamp Guiro to 0");
     }
-    for (i = 0u; i < (unsigned int)MP7_INSTR_COUNT; i++) {
-        mp7_set_instr_gain(ctx, (mp7_instr)i, 0);
+    for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+        pops_set_instr_gain(ctx, (pops_instr)i, 0);
         if (ctx->mixer.instr_gain_q16[i] != 0) {
-            fail("mp7_set_instr_gain() did not map an instrument");
+            fail("pops_set_instr_gain() did not map an instrument");
             break;
         }
     }
     if (failures == 0) {
-        ok("mp7_set_instr_gain() maps and clamps all instruments");
+        ok("pops_set_instr_gain() maps and clamps all instruments");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_set_instr_pan(ctx, MP7_INSTR_QUIJADA, POPPY_Q16_ONE + 1);
-    if (ctx->mixer.instr_pan_q16[MP7_INSTR_QUIJADA] != POPPY_Q16_ONE) {
-        fail("mp7_set_instr_pan() does not clamp Quijada to 1.0");
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_set_instr_pan(ctx, POPS_INSTR_QUIJADA, POPS_Q16_ONE + 1);
+    if (ctx->mixer.instr_pan_q16[POPS_INSTR_QUIJADA] != POPS_Q16_ONE) {
+        fail("pops_set_instr_pan() does not clamp Quijada to 1.0");
     }
-    mp7_set_instr_pan(ctx, MP7_INSTR_GUIRO, -1);
-    if (ctx->mixer.instr_pan_q16[MP7_INSTR_GUIRO] != 0) {
-        fail("mp7_set_instr_pan() does not clamp Guiro to 0");
+    pops_set_instr_pan(ctx, POPS_INSTR_GUIRO, -1);
+    if (ctx->mixer.instr_pan_q16[POPS_INSTR_GUIRO] != 0) {
+        fail("pops_set_instr_pan() does not clamp Guiro to 0");
     }
-    for (i = 0u; i < (unsigned int)MP7_INSTR_COUNT; i++) {
-        mp7_set_instr_pan(ctx, (mp7_instr)i, 0);
+    for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+        pops_set_instr_pan(ctx, (pops_instr)i, 0);
         if ((ctx->mixer.instr_pan_q16[i] != 0) ||
             (ctx->voices[i].pan_q16 != 0)) {
-            fail("mp7_set_instr_pan() did not map an instrument");
+            fail("pops_set_instr_pan() did not map an instrument");
             break;
         }
     }
     if (failures == 0) {
-        ok("mp7_set_instr_pan() maps and clamps all instruments");
+        ok("pops_set_instr_pan() maps and clamps all instruments");
     }
 
     /* A per-instrument pan survives a sample-rate change: the voices are
      * rebuilt there, and the pan lives in the mixer. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_set_instr_pan(ctx, MP7_INSTR_CYMBAL_1, POPPY_Q16_ONE);
-    mp7_set_sample_rate(ctx, 44100u);
-    if ((ctx->mixer.instr_pan_q16[MP7_INSTR_CYMBAL_1] != POPPY_Q16_ONE) ||
-        (ctx->voices[MP7_INSTR_CYMBAL_1].pan_q16 != POPPY_Q16_ONE)) {
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_set_instr_pan(ctx, POPS_INSTR_CYMBAL_1, POPS_Q16_ONE);
+    pops_set_sample_rate(ctx, 44100u);
+    if ((ctx->mixer.instr_pan_q16[POPS_INSTR_CYMBAL_1] != POPS_Q16_ONE) ||
+        (ctx->voices[POPS_INSTR_CYMBAL_1].pan_q16 != POPS_Q16_ONE)) {
         fail("a sample-rate change clears the per-instrument pan");
     } else {
         ok("a sample-rate change keeps the per-instrument pan");
     }
 
     /* Reset restores the panel defaults. */
-    mp7_reset(ctx);
+    pops_reset(ctx);
     {
         int gain_bad = 0;
 
-        for (i = 0u; i < (unsigned int)MP7_INSTR_COUNT; i++) {
-            int32_t expected = POPPY_Q16_ONE;
+        for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
+            int32_t expected = POPS_Q16_ONE;
 
-            if ((i == (unsigned int)MP7_INSTR_TAMBOURINE) ||
-                (i == (unsigned int)MP7_INSTR_GUIRO) ||
-                (i == (unsigned int)MP7_INSTR_QUIJADA)) {
-                expected = POPPY_Q16_ONE / 2;
+            if ((i == (unsigned int)POPS_INSTR_TAMBOURINE) ||
+                (i == (unsigned int)POPS_INSTR_GUIRO) ||
+                (i == (unsigned int)POPS_INSTR_QUIJADA)) {
+                expected = POPS_Q16_ONE / 2;
             }
             if ((ctx->mixer.instr_gain_q16[i] != expected) ||
-                (ctx->mixer.instr_pan_q16[i] != POPPY_Q16_ONE / 2)) {
+                (ctx->mixer.instr_pan_q16[i] != POPS_Q16_ONE / 2)) {
                 gain_bad = 1;
                 break;
             }
         }
 
         if (gain_bad ||
-            (ctx->mixer.panel_volume_q16 != POPPY_Q16_ONE) ||
-            (ctx->mixer.balance_q16 != POPPY_Q16_ONE / 2) ||
-            (ctx->sequencer.tempo != 120u) || mp7_rhythm_running(ctx)) {
-            fail("mp7_reset() did not restore the panel defaults");
+            (ctx->mixer.panel_volume_q16 != POPS_Q16_ONE) ||
+            (ctx->mixer.balance_q16 != POPS_Q16_ONE / 2) ||
+            (ctx->sequencer.tempo != 120u) || pops_rhythm_running(ctx)) {
+            fail("pops_reset() did not restore the panel defaults");
         } else {
-            ok("mp7_reset() restores the panel defaults");
+            ok("pops_reset() restores the panel defaults");
         }
     }
 
@@ -3603,20 +3603,20 @@ static int command_api(void)
 static int command_panel(void)
 {
     struct mp7_context_s *ctx = context_new();
-    struct mp7_panel_state state;
+    struct pops_panel_state state;
     unsigned int guard;
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_get_panel_state(ctx, &state);
-    if ((state.bank != MP7_BANK_A) || (state.buttons != 0u) || state.pending ||
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_get_panel_state(ctx, &state);
+    if ((state.bank != POPS_BANK_A) || (state.buttons != 0u) || state.pending ||
         state.running || (state.column != 0u) || (state.flash_count != 0u)) {
         fail("the initial panel state is not the defaults");
     } else {
-        ok("mp7_get_panel_state() reports the initial defaults");
+        ok("pops_get_panel_state() reports the initial defaults");
     }
 
-    mp7_get_panel_state(0, &state);
-    if ((state.bank != MP7_BANK_A) || (state.pending_bank != MP7_BANK_A) ||
+    pops_get_panel_state(0, &state);
+    if ((state.bank != POPS_BANK_A) || (state.pending_bank != POPS_BANK_A) ||
         state.pending || state.running || (state.buttons != 0u)) {
         fail("a null context does not yield a zeroed panel state");
     } else {
@@ -3624,9 +3624,9 @@ static int command_panel(void)
     }
 
     /* The applied selection reports its bank and button mask. */
-    mp7_select_rhythm(ctx, MP7_BANK_B, 1u);
-    mp7_get_panel_state(ctx, &state);
-    if ((state.bank != MP7_BANK_B) || (state.buttons != 1u) || state.pending ||
+    pops_select_rhythm(ctx, POPS_BANK_B, 1u);
+    pops_get_panel_state(ctx, &state);
+    if ((state.bank != POPS_BANK_B) || (state.buttons != 1u) || state.pending ||
         !state.running || (ctx->sequencer.selected != ((uint32_t)1u << 10))) {
         fail("the panel state does not report the applied bank/buttons");
     } else {
@@ -3634,12 +3634,12 @@ static int command_panel(void)
     }
 
     /* Queued selections are visible separately from the applied one. */
-    mp7_select_rhythm(ctx, MP7_BANK_A,
-        mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1) | MP7_APPLY_NEXT_CYCLE);
-    mp7_get_panel_state(ctx, &state);
-    if (!state.pending || (state.pending_bank != MP7_BANK_A) ||
-        (state.pending_buttons != mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1)) ||
-        (state.bank != MP7_BANK_B)) {
+    pops_select_rhythm(ctx, POPS_BANK_A,
+        pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1) | POPS_APPLY_NEXT_CYCLE);
+    pops_get_panel_state(ctx, &state);
+    if (!state.pending || (state.pending_bank != POPS_BANK_A) ||
+        (state.pending_buttons != pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1)) ||
+        (state.bank != POPS_BANK_B)) {
         fail("the panel state does not report a queued selection");
     } else {
         ok("the panel state reports the queued selection");
@@ -3650,9 +3650,9 @@ static int command_panel(void)
     while ((ctx->sequencer.pending_valid != 0u) && (guard++ < 300000u)) {
         mp7_pattern_tick(ctx);
     }
-    mp7_get_panel_state(ctx, &state);
-    if (state.pending || (state.bank != MP7_BANK_A) ||
-        (state.buttons != mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1))) {
+    pops_get_panel_state(ctx, &state);
+    if (state.pending || (state.bank != POPS_BANK_A) ||
+        (state.buttons != pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1))) {
         fail("the queued selection was not applied to the panel state");
     } else {
         ok("the queued selection becomes the applied panel state");
@@ -3660,23 +3660,23 @@ static int command_panel(void)
 
     /* A stop keeps the lever/button indication but stops the transport and
      * cancels any further queued change. */
-    mp7_stop_rhythms(ctx);
-    mp7_get_panel_state(ctx, &state);
-    if (state.running || state.pending || (state.bank != MP7_BANK_A) ||
-        (state.buttons != mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1))) {
-        fail("mp7_stop_rhythms() did not leave the expected panel state");
+    pops_stop_rhythms(ctx);
+    pops_get_panel_state(ctx, &state);
+    if (state.running || state.pending || (state.bank != POPS_BANK_A) ||
+        (state.buttons != pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1))) {
+        fail("pops_stop_rhythms() did not leave the expected panel state");
     } else {
-        ok("mp7_stop_rhythms() keeps the bank/button indication");
+        ok("pops_stop_rhythms() keeps the bank/button indication");
     }
 
     /* Flash counter: one flash at column 31 and one at the cycle wrap. */
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_ROCK_1));
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
     guard = 0u;
     while ((ctx->sequencer.column != 31u) && (guard++ < 300000u)) {
         mp7_pattern_tick(ctx);
     }
-    mp7_get_panel_state(ctx, &state);
+    pops_get_panel_state(ctx, &state);
     if ((ctx->sequencer.column != 31u) || (state.flash_count != 1u)) {
         fail("the lamp did not flash at the second half of the grid");
     } else {
@@ -3687,7 +3687,7 @@ static int command_panel(void)
     while ((ctx->sequencer.column != 0u) && (guard++ < 300000u)) {
         mp7_pattern_tick(ctx);
     }
-    mp7_get_panel_state(ctx, &state);
+    pops_get_panel_state(ctx, &state);
     if ((ctx->sequencer.column != 0u) || (state.flash_count != 2u)) {
         fail("the lamp did not flash at the cycle wrap");
     } else {
@@ -3695,24 +3695,24 @@ static int command_panel(void)
     }
 
     /* The counter survives a stop; it is only reset by init/reset. */
-    mp7_stop_rhythms(ctx);
-    mp7_get_panel_state(ctx, &state);
+    pops_stop_rhythms(ctx);
+    pops_get_panel_state(ctx, &state);
     if (state.running || (state.flash_count != 2u)) {
-        fail("mp7_stop_rhythms() reset the lamp flash counter");
+        fail("pops_stop_rhythms() reset the lamp flash counter");
     } else {
         ok("the lamp flash counter survives a stop");
     }
 
-    mp7_reset(ctx);
-    mp7_get_panel_state(ctx, &state);
+    pops_reset(ctx);
+    pops_get_panel_state(ctx, &state);
     if (state.flash_count != 0u) {
-        fail("mp7_reset() did not reset the lamp flash counter");
+        fail("pops_reset() did not reset the lamp flash counter");
     } else {
-        ok("mp7_reset() resets the lamp flash counter");
+        ok("pops_reset() resets the lamp flash counter");
     }
 
-    mp7_init(ctx, MP7_DEFAULT_SAMPLE_RATE);
-    mp7_get_panel_state(ctx, &state);
+    mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+    pops_get_panel_state(ctx, &state);
     if (state.flash_count != 0u) {
         fail("mp7_init() did not reset the lamp flash counter");
     } else {
@@ -3722,11 +3722,11 @@ static int command_panel(void)
     /* A queued change that only moves the lever is applied too: the
      * no-button layer is the same on both banks, so the rhythm mask does
      * not change, but the bank indication still has to follow the lever. */
-    mp7_select_rhythm(ctx, MP7_BANK_A, 0u);
-    mp7_select_rhythm(ctx, MP7_BANK_B, MP7_APPLY_NEXT_CYCLE);
-    mp7_get_panel_state(ctx, &state);
-    if (!state.pending || (state.pending_bank != MP7_BANK_B) ||
-        (state.buttons != 0u) || (state.bank != MP7_BANK_A)) {
+    pops_select_rhythm(ctx, POPS_BANK_A, 0u);
+    pops_select_rhythm(ctx, POPS_BANK_B, POPS_APPLY_NEXT_CYCLE);
+    pops_get_panel_state(ctx, &state);
+    if (!state.pending || (state.pending_bank != POPS_BANK_B) ||
+        (state.buttons != 0u) || (state.bank != POPS_BANK_A)) {
         fail("a queued lever change is not reported as pending");
     } else {
         ok("a queued lever change is reported as pending");
@@ -3736,8 +3736,8 @@ static int command_panel(void)
     while ((ctx->sequencer.pending_valid != 0u) && (guard++ < 300000u)) {
         mp7_pattern_tick(ctx);
     }
-    mp7_get_panel_state(ctx, &state);
-    if (state.pending || (state.bank != MP7_BANK_B) || (state.buttons != 0u) ||
+    pops_get_panel_state(ctx, &state);
+    if (state.pending || (state.bank != POPS_BANK_B) || (state.buttons != 0u) ||
         !state.running) {
         fail("a queued lever change was not applied to the panel state");
     } else {
@@ -3754,31 +3754,31 @@ static int command_reverb(void)
     enum { FRAMES = 4096 };
     static int16_t dry[FRAMES * 2];
     static int16_t wet[FRAMES * 2];
-    mp7_context ctx = mp7_create_context(MP7_DEFAULT_SAMPLE_RATE);
+    pops_context ctx = pops_create_context(POPS_DEFAULT_SAMPLE_RATE);
     unsigned int i;
     int differs = 0;
 
     if (ctx == 0) {
-        fail("mp7_create_context() failed for the reverb test");
+        fail("pops_create_context() failed for the reverb test");
         return failures == 0 ? 0 : 1;
     }
 
-    if ((mp7_get_instr_fx_send(ctx, MP7_INSTR_SNARE_1) != 0) ||
-        (mp7_get_instr_fx_send(ctx, MP7_INSTR_BASS) != 0)) {
+    if ((pops_get_instr_fx_send(ctx, POPS_INSTR_SNARE_1) != 0) ||
+        (pops_get_instr_fx_send(ctx, POPS_INSTR_BASS) != 0)) {
         fail("the instrument sends do not default to zero");
     } else {
         ok("the instrument sends default to zero");
     }
 
     /* With no send the reverb is bypassed and the mix is the dry mix. */
-    mp7_trigger(ctx, MP7_INSTR_SNARE_1, 100);
-    mp7_process(ctx, dry, FRAMES);
+    pops_trigger(ctx, POPS_INSTR_SNARE_1, 100);
+    pops_process(ctx, dry, FRAMES);
 
     /* A full send adds a wet return, so the mix changes. */
-    mp7_reset(ctx);
-    mp7_set_instr_fx_send(ctx, MP7_INSTR_SNARE_1, POPPY_Q16_ONE);
-    mp7_trigger(ctx, MP7_INSTR_SNARE_1, 100);
-    mp7_process(ctx, wet, FRAMES);
+    pops_reset(ctx);
+    pops_set_instr_fx_send(ctx, POPS_INSTR_SNARE_1, POPS_Q16_ONE);
+    pops_trigger(ctx, POPS_INSTR_SNARE_1, 100);
+    pops_process(ctx, wet, FRAMES);
 
     for (i = 0u; i < (unsigned int)(FRAMES * 2); i++) {
         if (dry[i] != wet[i]) {
@@ -3792,21 +3792,21 @@ static int command_reverb(void)
     }
 
     /* The send clamps, and a reset returns it to its default. */
-    mp7_set_instr_fx_send(ctx, MP7_INSTR_SNARE_1, -1);
-    if (mp7_get_instr_fx_send(ctx, MP7_INSTR_SNARE_1) != 0) {
+    pops_set_instr_fx_send(ctx, POPS_INSTR_SNARE_1, -1);
+    if (pops_get_instr_fx_send(ctx, POPS_INSTR_SNARE_1) != 0) {
         fail("the reverb send did not clamp to zero");
     } else {
         ok("the reverb send clamps to zero");
     }
 
-    mp7_reset(ctx);
-    if (mp7_get_instr_fx_send(ctx, MP7_INSTR_SNARE_1) != 0) {
-        fail("mp7_reset() did not restore the reverb defaults");
+    pops_reset(ctx);
+    if (pops_get_instr_fx_send(ctx, POPS_INSTR_SNARE_1) != 0) {
+        fail("pops_reset() did not restore the reverb defaults");
     } else {
-        ok("mp7_reset() restores the reverb defaults");
+        ok("pops_reset() restores the reverb defaults");
     }
 
-    mp7_destroy_context(ctx);
+    pops_destroy_context(ctx);
     return failures == 0 ? 0 : 1;
 }
 #endif /* MP7_FX_REVERB */

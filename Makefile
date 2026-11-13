@@ -1,14 +1,14 @@
 # Makefile for the Mini Pops library (mp7).
 #
 # Targets:
-#   all     build libpoppy.a and mp7_test
+#   all     build libpops.a and libpops_test
 #   check   build and run the test harness for the flags in use
 #   check-alt  run the test harness for the other EXTRA_DEF variant
 #   check-fx   build with the optional reverb and run its checks
 #   play    build the OpenAL rhythm player example
 #   clean   remove the build products
 #
-# The archive is libpoppy.a (-lpoppy) while the API prefix is mp7_/MP7_.
+# The archive is libpops.a (-lpops) while the API prefix is pops_/POPS_.
 # That mismatch is intentional; see README.md.
 
 CC      ?= cc
@@ -41,7 +41,7 @@ NO_UNWIND := $(shell $(CC) -fno-asynchronous-unwind-tables -fno-unwind-tables \
 # The extended build adds the 20 user pattern slots and the pattern source
 # switch. It is on by default, so the shipped library carries them:
 #
-#   EXTRA_DEF := -DLIBPOPPY_EXTRA     the extended library, the default
+#   EXTRA_DEF := -DLIBPOPS_EXTRA     the extended library, the default
 #   EXTRA_DEF :=                      the minimal, preset-only library
 #
 # Empty the EXTRA_DEF line to build the minimal library: the 20 factory
@@ -50,12 +50,12 @@ NO_UNWIND := $(shell $(CC) -fno-asynchronous-unwind-tables -fno-unwind-tables \
 # the default flags check the extended library; `make check-alt` tests the
 # other one, which is what CI runs for the minimal variant.
 
-EXTRA_DEF := -DLIBPOPPY_EXTRA
+EXTRA_DEF := -DLIBPOPS_EXTRA
 
 # The other configuration, built next to the shipped one for the test run.
-ALT_DEF := $(if $(EXTRA_DEF),,-DLIBPOPPY_EXTRA)
+ALT_DEF := $(if $(EXTRA_DEF),,-DLIBPOPS_EXTRA)
 # The send reverb is an optional feature, tested in its own build.
-FX_DEF := -DLIBPOPPY_FX_REVERB
+FX_DEF := -DLIBPOPS_FX_REVERB
 
 BASE_CFLAGS       := $(CSTD) $(WARN) $(OPT) $(FLOAT_WARN) $(NO_UNWIND) $(INCLUDES) $(CFLAGS) -MMD -MP
 BASE_TEST_CFLAGS  := $(CSTD) $(WARN) $(OPT) $(NO_UNWIND) $(INCLUDES) $(CFLAGS) -MMD -MP
@@ -108,17 +108,17 @@ EXAMPLE_OBJS := $(patsubst examples/%.c,$(BUILD)/examples/%.o,$(EXAMPLES))
 OPENAL_CFLAGS := $(shell pkg-config --cflags openal 2>/dev/null)
 OPENAL_LIBS   := $(shell pkg-config --libs openal 2>/dev/null || echo -lopenal)
 
-LIB  := libpoppy.a
-TEST := mp7_test
+LIB  := libpops.a
+TEST := libpops_test
 PLAY := $(BUILD)/examples/play_rhythm
 
 # The other configuration, built next to the shipped one.
-ALT_LIB  := $(BUILD)/libpoppy_alt.a
-ALT_TEST := $(BUILD)/mp7_test_alt
+ALT_LIB  := $(BUILD)/libpops_alt.a
+ALT_TEST := $(BUILD)/libpops_test_alt
 
 # The reverb configuration.
-FX_LIB  := $(BUILD)/libpoppy_fx.a
-FX_TEST := $(BUILD)/mp7_test_fx
+FX_LIB  := $(BUILD)/libpops_fx.a
+FX_TEST := $(BUILD)/libpops_test_fx
 
 .PHONY: all check check-alt check-fx clean play
 
@@ -129,21 +129,21 @@ $(LIB): $(LIB_OBJS)
 	$(RANLIB) $@
 
 $(TEST): $(TEST_OBJS) $(LIB)
-	$(CC) $(TEST_CFLAGS) -o $@ $(TEST_OBJS) -L. -lpoppy -lm
+	$(CC) $(TEST_CFLAGS) -o $@ $(TEST_OBJS) -L. -lpops -lm
 
 $(ALT_LIB): $(ALT_LIB_OBJS)
 	$(AR) rcs $@ $^
 	$(RANLIB) $@
 
 $(ALT_TEST): $(ALT_TEST_OBJS) $(ALT_LIB)
-	$(CC) $(ALT_TEST_CFLAGS) -o $@ $(ALT_TEST_OBJS) -L$(BUILD) -lpoppy_alt -lm
+	$(CC) $(ALT_TEST_CFLAGS) -o $@ $(ALT_TEST_OBJS) -L$(BUILD) -lpops_alt -lm
 
 $(FX_LIB): $(FX_LIB_OBJS)
 	$(AR) rcs $@ $^
 	$(RANLIB) $@
 
 $(FX_TEST): $(FX_TEST_OBJS) $(FX_LIB)
-	$(CC) $(FX_TEST_CFLAGS) -o $@ $(FX_TEST_OBJS) -L$(BUILD) -lpoppy_fx -lm
+	$(CC) $(FX_TEST_CFLAGS) -o $@ $(FX_TEST_OBJS) -L$(BUILD) -lpops_fx -lm
 
 $(BUILD)/src/%.o: src/%.c
 	@mkdir -p $(dir $@)
@@ -176,14 +176,14 @@ $(BUILD)/examples/%.o: examples/%.c
 play: $(PLAY)
 
 $(PLAY): $(BUILD)/examples/play_rhythm.o $(LIB)
-	$(CC) $(TEST_CFLAGS) -o $@ $< -L. -lpoppy $(OPENAL_LIBS)
+	$(CC) $(TEST_CFLAGS) -o $@ $< -L. -lpops $(OPENAL_LIBS)
 
 $(BUILD)/examples/play_rhythm.o: examples/play_rhythm.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LIB_CFLAGS) $(OPENAL_CFLAGS) -c -o $@ $<
 
 # `make check` builds and runs the tests of the configuration the flags
-# select: with the default EXTRA_DEF that is the LIBPOPPY_EXTRA library.
+# select: with the default EXTRA_DEF that is the LIBPOPS_EXTRA library.
 check: $(TEST) $(EXAMPLE_OBJS)
 	./$(TEST) --init
 	./$(TEST) --sine

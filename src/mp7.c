@@ -2,7 +2,7 @@
  * mp7.c - context handling and entry points of the Mini Pops library.
  *
  * The context owns the 15 voice states, the rhythm sequencer and the global
- * mix controls. mp7_process() advances the sequencer, renders every voice and
+ * mix controls. pops_process() advances the sequencer, renders every voice and
  * sums it into a stereo mix through the shared mixer core.
  */
 
@@ -28,7 +28,7 @@ static void clear_stereo(int16_t *stereo_out, size_t frames)
     }
 }
 
-mp7_context mp7_create_context(uint32_t sample_rate)
+pops_context pops_create_context(uint32_t sample_rate)
 {
     struct mp7_context_s *c =
         (struct mp7_context_s *)malloc(sizeof(struct mp7_context_s));
@@ -37,23 +37,23 @@ mp7_context mp7_create_context(uint32_t sample_rate)
         return 0;
     }
 
-    mp7_init((mp7_context)c, sample_rate);
+    mp7_init((pops_context)c, sample_rate);
 
 #if MP7_FX_REVERB
     /* The reverb delay memory is a second allocation. Without it the
      * context still works, but the bus has nothing to render into, so
      * creation fails like any other allocation failure. */
-    if (poppy_reverb_init(&c->reverb) != 0) {
+    if (pops_reverb_init(&c->reverb) != 0) {
         free(c);
         return 0;
     }
     mp7_fx_apply(c);
 #endif
 
-    return (mp7_context)c;
+    return (pops_context)c;
 }
 
-void mp7_destroy_context(mp7_context ctx)
+void pops_destroy_context(pops_context ctx)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
 
@@ -65,34 +65,34 @@ void mp7_destroy_context(mp7_context ctx)
     free(c);
 }
 
-/* Prepare a context. Internal: mp7_create_context() and mp7_reset() drive
+/* Prepare a context. Internal: pops_create_context() and pops_reset() drive
  * it, and the public API has no other entry point.
  *
  * This zeroes the whole context, so it also clears the user-defined pattern
  * slots in an extended build. */
-void mp7_init(mp7_context ctx, uint32_t sample_rate)
+void mp7_init(pops_context ctx, uint32_t sample_rate)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     if (c == 0) {
         return;
     }
 
-    poppy_sine_init();
+    pops_sine_init();
 
     memset(c, 0, sizeof(*c));
 
     if (sample_rate == 0u) {
-        sample_rate = MP7_DEFAULT_SAMPLE_RATE;
+        sample_rate = POPS_DEFAULT_SAMPLE_RATE;
     }
     c->sample_rate = sample_rate;
 
     /* The reverb controls are reset here, but the delay memory is not
      * allocated: mp7_init() can be called on a caller-owned context, so it
-     * only prepares the state. mp7_create_context() attaches the bus and
-     * mp7_reset() preserves it. */
+     * only prepares the state. pops_create_context() attaches the bus and
+     * pops_reset() preserves it. */
     mp7_fx_init(c);
 
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
     /* Extended-build synthesis defaults. These must match the factory voice
      * configuration in src/mp7_voice.c. Set them before mp7_voice_init_all()
      * so the voice setup can apply them. */
@@ -100,14 +100,14 @@ void mp7_init(mp7_context ctx, uint32_t sample_rate)
     {
         unsigned int i;
 
-        for (i = 0u; i < (unsigned int)MP7_INSTR_COUNT; i++) {
+        for (i = 0u; i < (unsigned int)POPS_INSTR_COUNT; i++) {
             const struct mp7_instr_param *param = &mp7_instr_params[i];
 
             if (param->slot == MP7_PARAM_SLOT_NONE) {
                 continue;
             }
             /* The decay multiplier is 1.0, the factory decay. */
-            c->instr_decay_q16[param->slot] = POPPY_Q16_ONE;
+            c->instr_decay_q16[param->slot] = POPS_Q16_ONE;
             c->instr_cutoff_hz[param->slot] = param->cutoff_default_hz;
         }
     }
@@ -115,19 +115,19 @@ void mp7_init(mp7_context ctx, uint32_t sample_rate)
 
     /* The mixer is initialized first: the voices take their pan from the
      * per-instrument pan positions. */
-    poppy_mixer_init(&c->mixer);
+    pops_mixer_init(&c->mixer);
 
     mp7_voice_init_all(c);
     mp7_pattern_init(c);
 
     /* The panel's three Additional Volume faders start at 0.5; every other
      * instrument starts at unity. */
-    poppy_mixer_set_instr_gain(&c->mixer, MP7_INSTR_TAMBOURINE, POPPY_Q16_ONE / 2);
-    poppy_mixer_set_instr_gain(&c->mixer, MP7_INSTR_GUIRO, POPPY_Q16_ONE / 2);
-    poppy_mixer_set_instr_gain(&c->mixer, MP7_INSTR_QUIJADA, POPPY_Q16_ONE / 2);
+    pops_mixer_set_instr_gain(&c->mixer, POPS_INSTR_TAMBOURINE, POPS_Q16_ONE / 2);
+    pops_mixer_set_instr_gain(&c->mixer, POPS_INSTR_GUIRO, POPS_Q16_ONE / 2);
+    pops_mixer_set_instr_gain(&c->mixer, POPS_INSTR_QUIJADA, POPS_Q16_ONE / 2);
 }
 
-void mp7_set_sample_rate(mp7_context ctx, uint32_t sample_rate)
+void pops_set_sample_rate(pops_context ctx, uint32_t sample_rate)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     if (c == 0) {
@@ -135,7 +135,7 @@ void mp7_set_sample_rate(mp7_context ctx, uint32_t sample_rate)
     }
 
     if (sample_rate == 0u) {
-        sample_rate = MP7_DEFAULT_SAMPLE_RATE;
+        sample_rate = POPS_DEFAULT_SAMPLE_RATE;
     }
     c->sample_rate = sample_rate;
     mp7_voice_init_all(c);
@@ -153,7 +153,7 @@ void mp7_set_sample_rate(mp7_context ctx, uint32_t sample_rate)
     /* The reverb's active delay lengths follow the sample rate. The delay
      * memory itself is already sized for the maximum rate, so this only
      * retunes and clears it. */
-    poppy_reverb_clear(&c->reverb);
+    pops_reverb_clear(&c->reverb);
     mp7_fx_apply(c);
 #endif
 }
@@ -161,11 +161,11 @@ void mp7_set_sample_rate(mp7_context ctx, uint32_t sample_rate)
 /* Reset the context, keeping the sample rate and - in an extended build -
  * the user-defined pattern slots. The reverb delay memory is not touched:
  * mp7_init() zeroes the context, so the caller saves and restores it. */
-static void mp7_reset_state(mp7_context ctx, uint32_t sample_rate)
+static void mp7_reset_state(pops_context ctx, uint32_t sample_rate)
 {
-#ifdef LIBPOPPY_EXTRA
+#ifdef LIBPOPS_EXTRA
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
-    struct mp7_user_slot saved_patterns[MP7_USER_PATTERN_COUNT];
+    struct mp7_user_slot saved_patterns[POPS_USER_PATTERN_COUNT];
 
     memcpy(saved_patterns, c->user_patterns, sizeof(saved_patterns));
     mp7_init(ctx, sample_rate);
@@ -175,7 +175,7 @@ static void mp7_reset_state(mp7_context ctx, uint32_t sample_rate)
 #endif
 }
 
-void mp7_reset(mp7_context ctx)
+void pops_reset(pops_context ctx)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     uint32_t sample_rate;
@@ -191,12 +191,12 @@ void mp7_reset(mp7_context ctx)
     {
         /* mp7_init() zeroes the whole context, so the delay memory is
          * saved across it instead of being leaked and reallocated. */
-        struct poppy_reverb saved_reverb = c->reverb;
+        struct pops_reverb saved_reverb = c->reverb;
 
         mp7_reset_state(ctx, sample_rate);
 
         c->reverb = saved_reverb;
-        poppy_reverb_clear(&c->reverb);
+        pops_reverb_clear(&c->reverb);
         mp7_fx_apply(c);
     }
 #else
@@ -211,7 +211,7 @@ void mp7_reset(mp7_context ctx)
  * changes when a column fires, which can happen in the middle of a block.
  * It is refreshed there, and whenever a note is triggered, so the per-sample
  * path only has to apply it. */
-void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
+void pops_process(pops_context ctx, int16_t *stereo_out, size_t frames)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     size_t frame;
@@ -229,8 +229,8 @@ void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
     /* The effective per-voice gain only changes when a mix control changes,
      * and a control cannot change while a block is being rendered, so the
      * gain is computed once per block instead of once per sample. */
-    for (instr = 0u; instr < (unsigned int)MP7_INSTR_COUNT; instr++) {
-        mp7_voice_refresh_gain(c, (mp7_instr)instr);
+    for (instr = 0u; instr < (unsigned int)POPS_INSTR_COUNT; instr++) {
+        mp7_voice_refresh_gain(c, (pops_instr)instr);
     }
 
     for (frame = 0u; frame < frames; frame++) {
@@ -246,7 +246,7 @@ void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
          * sample-accurate. */
         mp7_pattern_tick(c);
 
-        for (instr = 0u; instr < (unsigned int)MP7_INSTR_COUNT; instr++) {
+        for (instr = 0u; instr < (unsigned int)POPS_INSTR_COUNT; instr++) {
             struct mp7_voice *voice = &c->voices[instr];
             int64_t sample;
             int64_t left;
@@ -263,9 +263,9 @@ void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
                 continue;
             }
 
-            sample = poppy_mul_q31_gain(sample, c->voice_gain_q16[instr]);
-            left = poppy_mixer_pan_left(sample, voice->pan_q16);
-            right = poppy_mixer_pan_right(sample, voice->pan_q16);
+            sample = pops_mul_q31_gain(sample, c->voice_gain_q16[instr]);
+            left = pops_mixer_pan_left(sample, voice->pan_q16);
+            right = pops_mixer_pan_right(sample, voice->pan_q16);
             sum_left += left;
             sum_right += right;
 
@@ -277,8 +277,8 @@ void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
                 const int32_t send = c->instr_fx_send_q16[instr];
 
                 if (send != 0) {
-                    fx_left += poppy_mul_q31_gain(left, send);
-                    fx_right += poppy_mul_q31_gain(right, send);
+                    fx_left += pops_mul_q31_gain(left, send);
+                    fx_right += pops_mul_q31_gain(right, send);
                 }
             }
 #endif
@@ -289,27 +289,27 @@ void mp7_process(mp7_context ctx, int16_t *stereo_out, size_t frames)
             int32_t wet_l;
             int32_t wet_r;
 
-            poppy_reverb_process(&c->reverb, fx_left, fx_right,
+            pops_reverb_process(&c->reverb, fx_left, fx_right,
                                  &wet_l, &wet_r);
             sum_left += wet_l;
             sum_right += wet_r;
         }
 #endif
 
-        stereo_out[2u * frame] = poppy_mixer_to_q15(sum_left, c->mixer.panel_volume_q16);
-        stereo_out[2u * frame + 1u] = poppy_mixer_to_q15(sum_right,
+        stereo_out[2u * frame] = pops_mixer_to_q15(sum_left, c->mixer.panel_volume_q16);
+        stereo_out[2u * frame + 1u] = pops_mixer_to_q15(sum_right,
                                                          c->mixer.panel_volume_q16);
     }
 }
 
-void mp7_trigger(mp7_context ctx, mp7_instr instr, uint8_t velocity)
+void pops_trigger(pops_context ctx, pops_instr instr, uint8_t velocity)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
-    if ((c == 0) || ((unsigned int)instr >= (unsigned int)MP7_INSTR_COUNT)) {
+    if ((c == 0) || ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT)) {
         return;
     }
 
-    if (instr == MP7_INSTR_GUIRO) {
+    if (instr == POPS_INSTR_GUIRO) {
         /* The Guiro is the gated voice: a note the caller triggers holds the
          * same gate the sequencer uses, so the two never fight over it. */
         mp7_guiro_gate(c, c->sequencer.guiro_gated,
@@ -322,8 +322,8 @@ void mp7_trigger(mp7_context ctx, mp7_instr instr, uint8_t velocity)
         return;
     }
 
-#ifdef LIBPOPPY_EXTRA
-    c->voices[instr].accent_gain_q16 = POPPY_Q16_ONE;
+#ifdef LIBPOPS_EXTRA
+    c->voices[instr].accent_gain_q16 = POPS_Q16_ONE;
     mp7_voice_refresh_gain(c, instr);
 #endif
     mp7_voice_trigger(&c->voices[instr]);
@@ -332,18 +332,18 @@ void mp7_trigger(mp7_context ctx, mp7_instr instr, uint8_t velocity)
 /* The panel has one bank lever and ten buttons. Derive the internal absolute
  * rhythm mask from them; bits 10..14 of the button mask do not exist, and bit
  * 15 is the apply flag rather than a button. */
-static uint32_t rhythm_selection(mp7_bank bank, uint16_t buttons)
+static uint32_t rhythm_selection(pops_bank bank, uint16_t buttons)
 {
     uint32_t button_mask = (uint32_t)buttons & 0x03FFu;
 
-    return (bank == MP7_BANK_B) ? (button_mask << 10) : button_mask;
+    return (bank == POPS_BANK_B) ? (button_mask << 10) : button_mask;
 }
 
-void mp7_select_rhythm(mp7_context ctx, mp7_bank bank, uint16_t buttons)
+void pops_select_rhythm(pops_context ctx, pops_bank bank, uint16_t buttons)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     uint16_t button_mask = (uint16_t)(buttons & 0x03FFu);
-    int apply_next = (buttons & MP7_APPLY_NEXT_CYCLE) != 0u;
+    int apply_next = (buttons & POPS_APPLY_NEXT_CYCLE) != 0u;
     uint32_t selected;
     int was_running;
 
@@ -351,7 +351,7 @@ void mp7_select_rhythm(mp7_context ctx, mp7_bank bank, uint16_t buttons)
         return;
     }
 
-    bank = (bank == MP7_BANK_B) ? MP7_BANK_B : MP7_BANK_A;
+    bank = (bank == POPS_BANK_B) ? POPS_BANK_B : POPS_BANK_A;
     selected = rhythm_selection(bank, button_mask);
     was_running = (c->sequencer.running != 0u);
 
@@ -387,7 +387,7 @@ void mp7_select_rhythm(mp7_context ctx, mp7_bank bank, uint16_t buttons)
     }
 }
 
-void mp7_stop_rhythms(mp7_context ctx)
+void pops_stop_rhythms(pops_context ctx)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     if (c == 0) {
@@ -405,7 +405,7 @@ void mp7_stop_rhythms(mp7_context ctx)
     mp7_pattern_reset(c);
 }
 
-void mp7_set_tempo(mp7_context ctx, uint16_t bpm)
+void pops_set_tempo(pops_context ctx, uint16_t bpm)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     if (c == 0) {
@@ -415,14 +415,14 @@ void mp7_set_tempo(mp7_context ctx, uint16_t bpm)
     mp7_pattern_set_tempo(c, (uint32_t)bpm);
 }
 
-bool mp7_rhythm_running(const void *ctx)
+bool pops_rhythm_running(const void *ctx)
 {
     const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
     return (c != 0) && (c->sequencer.running != 0u);
 }
 
-void mp7_get_panel_state(const void *ctx,
-                         struct mp7_panel_state *out)
+void pops_get_panel_state(const void *ctx,
+                         struct pops_panel_state *out)
 {
     const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
     if (out == 0) {
@@ -431,14 +431,14 @@ void mp7_get_panel_state(const void *ctx,
 
     if (c == 0) {
         memset(out, 0, sizeof(*out));
-        out->bank = MP7_BANK_A;
-        out->pending_bank = MP7_BANK_A;
+        out->bank = POPS_BANK_A;
+        out->pending_bank = POPS_BANK_A;
         return;
     }
 
-    out->bank = (mp7_bank)c->sequencer.bank;
+    out->bank = (pops_bank)c->sequencer.bank;
     out->buttons = c->sequencer.buttons;
-    out->pending_bank = (mp7_bank)c->sequencer.pending_bank;
+    out->pending_bank = (pops_bank)c->sequencer.pending_bank;
     out->pending_buttons = c->sequencer.pending_buttons;
     out->pending = (c->sequencer.pending_valid != 0u);
     out->running = (c->sequencer.running != 0u);
@@ -446,27 +446,27 @@ void mp7_get_panel_state(const void *ctx,
     out->flash_count = c->sequencer.flash_count;
 }
 
-void mp7_set_volume(mp7_context ctx, int32_t volume_q16)
+void pops_set_volume(pops_context ctx, int32_t volume_q16)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     if (c == 0) {
         return;
     }
 
-    poppy_mixer_set_volume(&c->mixer, volume_q16);
+    pops_mixer_set_volume(&c->mixer, volume_q16);
 }
 
-void mp7_set_balance(mp7_context ctx, int32_t balance_q16)
+void pops_set_balance(pops_context ctx, int32_t balance_q16)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     if (c == 0) {
         return;
     }
 
-    poppy_mixer_set_balance(&c->mixer, balance_q16);
+    pops_mixer_set_balance(&c->mixer, balance_q16);
 }
 
-void mp7_set_instr_gain(mp7_context ctx, mp7_instr instr, int32_t gain_q16)
+void pops_set_instr_gain(pops_context ctx, pops_instr instr, int32_t gain_q16)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
 
@@ -474,14 +474,14 @@ void mp7_set_instr_gain(mp7_context ctx, mp7_instr instr, int32_t gain_q16)
         return;
     }
 
-    if ((unsigned int)instr >= (unsigned int)MP7_INSTR_COUNT) {
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
         return;
     }
 
-    poppy_mixer_set_instr_gain(&c->mixer, (unsigned int)instr, gain_q16);
+    pops_mixer_set_instr_gain(&c->mixer, (unsigned int)instr, gain_q16);
 }
 
-void mp7_set_instr_pan(mp7_context ctx, mp7_instr instr, int32_t pan_q16)
+void pops_set_instr_pan(pops_context ctx, pops_instr instr, int32_t pan_q16)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
 
@@ -489,19 +489,19 @@ void mp7_set_instr_pan(mp7_context ctx, mp7_instr instr, int32_t pan_q16)
         return;
     }
 
-    if ((unsigned int)instr >= (unsigned int)MP7_INSTR_COUNT) {
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
         return;
     }
 
-    poppy_mixer_set_instr_pan(&c->mixer, (unsigned int)instr, pan_q16);
+    pops_mixer_set_instr_pan(&c->mixer, (unsigned int)instr, pan_q16);
 
     /* The voice pans immediately, so a note that is already sounding moves
      * to the new position. */
     c->voices[instr].pan_q16 = c->mixer.instr_pan_q16[instr];
 }
 
-void mp7_get_selection_pattern(mp7_context ctx, mp7_bank bank, uint16_t buttons,
-                               struct mp7_pattern_view *out)
+void pops_get_selection_pattern(pops_context ctx, pops_bank bank, uint16_t buttons,
+                               struct pops_pattern_view *out)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
 
@@ -519,59 +519,59 @@ void mp7_get_selection_pattern(mp7_context ctx, mp7_bank bank, uint16_t buttons,
     mp7_pattern_compose(c, rhythm_selection(bank, buttons), out);
 }
 
-uint64_t mp7_timesig_enable_mask(mp7_timesig timesig)
+uint64_t pops_timesig_enable_mask(pops_timesig timesig)
 {
     switch (timesig) {
-    case MP7_TIMESIG_2_4:
+    case POPS_TIMESIG_2_4:
         return MP7_ENABLE_2_4;
-    case MP7_TIMESIG_3_4:
+    case POPS_TIMESIG_3_4:
         return MP7_ENABLE_3_4;
-    case MP7_TIMESIG_5_4T:
+    case POPS_TIMESIG_5_4T:
         return MP7_ENABLE_5_4T;
-    case MP7_TIMESIG_6_8T:
+    case POPS_TIMESIG_6_8T:
         return MP7_ENABLE_6_8T;
-    case MP7_TIMESIG_7_4:
+    case POPS_TIMESIG_7_4:
         return MP7_ENABLE_7_4;
-    case MP7_TIMESIG_4_4:
+    case POPS_TIMESIG_4_4:
         return MP7_ENABLE_4_4;
     default:
         return 0u;
     }
 }
 
-mp7_timesig mp7_timesig_of_mask(uint64_t mask)
+pops_timesig pops_timesig_of_mask(uint64_t mask)
 {
     unsigned int timesig;
 
-    for (timesig = 0u; timesig < (unsigned int)MP7_TIMESIG_COUNT; timesig++) {
-        if (mp7_timesig_enable_mask((mp7_timesig)timesig) == mask) {
-            return (mp7_timesig)timesig;
+    for (timesig = 0u; timesig < (unsigned int)POPS_TIMESIG_COUNT; timesig++) {
+        if (pops_timesig_enable_mask((pops_timesig)timesig) == mask) {
+            return (pops_timesig)timesig;
         }
     }
 
-    return MP7_TIMESIG_NONE;
+    return POPS_TIMESIG_NONE;
 }
 
-mp7_bank mp7_rhythm_bank(mp7_rhythm rhythm)
+pops_bank pops_rhythm_bank(pops_rhythm rhythm)
 {
-    if ((unsigned int)rhythm >= (unsigned int)MP7_RHYTHM_COUNT) {
-        return MP7_BANK_A;
+    if ((unsigned int)rhythm >= (unsigned int)POPS_RHYTHM_COUNT) {
+        return POPS_BANK_A;
     }
-    return ((unsigned int)rhythm < 10u) ? MP7_BANK_A : MP7_BANK_B;
+    return ((unsigned int)rhythm < 10u) ? POPS_BANK_A : POPS_BANK_B;
 }
 
-uint16_t mp7_rhythm_button_bit(mp7_rhythm rhythm)
+uint16_t pops_rhythm_button_bit(pops_rhythm rhythm)
 {
-    if ((unsigned int)rhythm >= (unsigned int)MP7_RHYTHM_COUNT) {
+    if ((unsigned int)rhythm >= (unsigned int)POPS_RHYTHM_COUNT) {
         return 0u;
     }
     return (uint16_t)(1u << ((unsigned int)rhythm % 10u));
 }
 
-#ifdef LIBPOPPY_EXTRA
-bool mp7_set_user_pattern(mp7_context ctx,
+#ifdef LIBPOPS_EXTRA
+bool pops_set_user_pattern(pops_context ctx,
                            unsigned int index,
-                           const struct mp7_user_pattern *pattern)
+                           const struct pops_user_pattern *pattern)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     struct mp7_user_slot *slot;
@@ -580,7 +580,7 @@ bool mp7_set_user_pattern(mp7_context ctx,
     if (c == 0) {
         return false;
     }
-    if (index >= (unsigned int)MP7_USER_PATTERN_COUNT) {
+    if (index >= (unsigned int)POPS_USER_PATTERN_COUNT) {
         return false;
     }
 
@@ -596,7 +596,7 @@ bool mp7_set_user_pattern(mp7_context ctx,
      * library derives the step-enable mask from it. A pattern therefore
      * cannot carry a mask of its own, and an unknown signature is refused
      * instead of being turned into one. */
-    if ((unsigned int)pattern->timesig >= (unsigned int)MP7_TIMESIG_COUNT) {
+    if ((unsigned int)pattern->timesig >= (unsigned int)POPS_TIMESIG_COUNT) {
         return false;
     }
 
@@ -621,9 +621,9 @@ bool mp7_set_user_pattern(mp7_context ctx,
     return true;
 }
 
-bool mp7_get_user_pattern(const void *ctx,
+bool pops_get_user_pattern(const void *ctx,
                            unsigned int index,
-                           struct mp7_user_pattern *out)
+                           struct pops_user_pattern *out)
 {
     const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
     const struct mp7_user_slot *slot;
@@ -634,7 +634,7 @@ bool mp7_get_user_pattern(const void *ctx,
 
     memset(out, 0, sizeof(*out));
 
-    if ((c == 0) || (index >= (unsigned int)MP7_USER_PATTERN_COUNT)) {
+    if ((c == 0) || (index >= (unsigned int)POPS_USER_PATTERN_COUNT)) {
         return false;
     }
 
@@ -644,12 +644,12 @@ bool mp7_get_user_pattern(const void *ctx,
     }
 
     memcpy(out->notes, slot->notes, sizeof(out->notes));
-    out->timesig = (mp7_timesig)slot->timesig;
+    out->timesig = (pops_timesig)slot->timesig;
 
     return true;
 }
 
-void mp7_set_pattern_source(mp7_context ctx, mp7_pattern_source source)
+void pops_set_pattern_source(pops_context ctx, pops_pattern_source source)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
 
@@ -657,15 +657,15 @@ void mp7_set_pattern_source(mp7_context ctx, mp7_pattern_source source)
         return;
     }
 
-    if (source != MP7_PATTERN_SOURCE_USER) {
-        source = MP7_PATTERN_SOURCE_PRESET;
+    if (source != POPS_PATTERN_SOURCE_USER) {
+        source = POPS_PATTERN_SOURCE_PRESET;
     }
 
-    c->sequencer.source = (uint8_t)((source == MP7_PATTERN_SOURCE_USER)
+    c->sequencer.source = (uint8_t)((source == POPS_PATTERN_SOURCE_USER)
                                      ? MP7_SOURCE_USER
                                      : MP7_SOURCE_PRESET);
 
-    /* The switch is immediate, like MP7_APPLY_NOW: the selection keeps its
+    /* The switch is immediate, like POPS_APPLY_NOW: the selection keeps its
      * meaning and is re-read against the other set of patterns, the playhead
      * keeps its position, and a pending change is cancelled. */
     c->sequencer.pending_valid = 0u;
@@ -676,17 +676,17 @@ void mp7_set_pattern_source(mp7_context ctx, mp7_pattern_source source)
     mp7_pattern_combine(c, c->sequencer.selected);
 }
 
-mp7_pattern_source mp7_get_pattern_source(const void *ctx)
+pops_pattern_source pops_get_pattern_source(const void *ctx)
 {
     const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
 
     if ((c == 0) || (c->sequencer.source != MP7_SOURCE_USER)) {
-        return MP7_PATTERN_SOURCE_PRESET;
+        return POPS_PATTERN_SOURCE_PRESET;
     }
-    return MP7_PATTERN_SOURCE_USER;
+    return POPS_PATTERN_SOURCE_USER;
 }
 
-void mp7_set_accent_gain(mp7_context ctx, int32_t gain_q16)
+void pops_set_accent_gain(pops_context ctx, int32_t gain_q16)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
 
@@ -694,11 +694,11 @@ void mp7_set_accent_gain(mp7_context ctx, int32_t gain_q16)
         return;
     }
 
-    c->accent_gain_q16 = poppy_clamp_i32(gain_q16, POPPY_Q16_ONE / 2,
-                                          2 * POPPY_Q16_ONE);
+    c->accent_gain_q16 = pops_clamp_i32(gain_q16, POPS_Q16_ONE / 2,
+                                          2 * POPS_Q16_ONE);
 }
 
-int32_t mp7_get_accent_gain(const void *ctx)
+int32_t pops_get_accent_gain(const void *ctx)
 {
     const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
 
@@ -709,7 +709,7 @@ int32_t mp7_get_accent_gain(const void *ctx)
     return c->accent_gain_q16;
 }
 
-void mp7_set_instr_decay(mp7_context ctx, mp7_instr instr, int32_t decay_q16)
+void pops_set_instr_decay(pops_context ctx, pops_instr instr, int32_t decay_q16)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
 
@@ -717,7 +717,7 @@ void mp7_set_instr_decay(mp7_context ctx, mp7_instr instr, int32_t decay_q16)
         return;
     }
 
-    if ((unsigned int)instr >= (unsigned int)MP7_INSTR_COUNT) {
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
         return;
     }
 
@@ -726,11 +726,11 @@ void mp7_set_instr_decay(mp7_context ctx, mp7_instr instr, int32_t decay_q16)
     }
 
     c->instr_decay_q16[mp7_instr_params[instr].slot] =
-        poppy_clamp_i32(decay_q16, MP7_DECAY_MIN_Q16, MP7_DECAY_MAX_Q16);
+        pops_clamp_i32(decay_q16, MP7_DECAY_MIN_Q16, MP7_DECAY_MAX_Q16);
     mp7_voice_apply_decay(c, instr);
 }
 
-int32_t mp7_get_instr_decay(const void *ctx, mp7_instr instr)
+int32_t pops_get_instr_decay(const void *ctx, pops_instr instr)
 {
     const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
 
@@ -738,7 +738,7 @@ int32_t mp7_get_instr_decay(const void *ctx, mp7_instr instr)
         return 0;
     }
 
-    if ((unsigned int)instr >= (unsigned int)MP7_INSTR_COUNT) {
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
         return 0;
     }
 
@@ -749,7 +749,7 @@ int32_t mp7_get_instr_decay(const void *ctx, mp7_instr instr)
     return c->instr_decay_q16[mp7_instr_params[instr].slot];
 }
 
-void mp7_set_instr_cutoff(mp7_context ctx, mp7_instr instr, uint32_t freq_hz)
+void pops_set_instr_cutoff(pops_context ctx, pops_instr instr, uint32_t freq_hz)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     const struct mp7_instr_param *param;
@@ -758,7 +758,7 @@ void mp7_set_instr_cutoff(mp7_context ctx, mp7_instr instr, uint32_t freq_hz)
         return;
     }
 
-    if ((unsigned int)instr >= (unsigned int)MP7_INSTR_COUNT) {
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
         return;
     }
 
@@ -777,7 +777,7 @@ void mp7_set_instr_cutoff(mp7_context ctx, mp7_instr instr, uint32_t freq_hz)
     mp7_voice_apply_cutoff(c, instr);
 }
 
-uint32_t mp7_get_instr_cutoff(const void *ctx, mp7_instr instr)
+uint32_t pops_get_instr_cutoff(const void *ctx, pops_instr instr)
 {
     const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;
 
@@ -785,7 +785,7 @@ uint32_t mp7_get_instr_cutoff(const void *ctx, mp7_instr instr)
         return 0;
     }
 
-    if ((unsigned int)instr >= (unsigned int)MP7_INSTR_COUNT) {
+    if ((unsigned int)instr >= (unsigned int)POPS_INSTR_COUNT) {
         return 0;
     }
 
@@ -795,9 +795,9 @@ uint32_t mp7_get_instr_cutoff(const void *ctx, mp7_instr instr)
 
     return c->instr_cutoff_hz[mp7_instr_params[instr].slot];
 }
-#endif /* LIBPOPPY_EXTRA */
+#endif /* LIBPOPS_EXTRA */
 
-uint32_t mp7_version_number(void)
+uint32_t pops_version_number(void)
 {
-    return MP7_VERSION_NUMBER;
+    return POPS_VERSION_NUMBER;
 }

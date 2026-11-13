@@ -11,7 +11,7 @@ quadrants are rebuilt at run time from this quadrant by mirroring and
 negation, so the full period is exact without storing it.
 
 The rounding convention is **round-half-up**, i.e. `floor(x + 0.5)`. The C
-harness (`mp7_test --sine`) uses the same convention, so the generator and the
+harness (`libpops_test --sine`) uses the same convention, so the generator and the
 test can never disagree about an entry that lands exactly on a half.
 
 Usage:
@@ -83,7 +83,7 @@ def check(quad: list[int]) -> int:
 
 
 def emit(quad: list[int]) -> None:
-    print("const int16_t poppy_sine_quad1[POPPY_SINE_QUAD_SIZE] = {")
+    print("const int16_t pops_sine_quad1[POPS_SINE_QUAD_SIZE] = {")
     for start in range(0, QUAD_SIZE, 8):
         row = ", ".join(f"{v:6d}" for v in quad[start : start + 8])
         print(f"    {row},")

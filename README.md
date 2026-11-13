@@ -1,4 +1,4 @@
-# libpoppy - a vintage drum machine engine library
+# libpops - a vintage drum machine engine library
 
 *This library is under development and the API may be slightly unstable.*
 
@@ -27,7 +27,7 @@ patterns in the library. See [User-defined patterns](#user-defined-patterns).
 ## Build
 
 ```sh
-make            # builds libpoppy.a
+make            # builds libpops.a
 make check      # builds and runs the test harness
 make play       # builds the OpenAL rhythm player example
 ```
@@ -39,11 +39,11 @@ The player is written to `build/examples/play_rhythm`:
 ./build/examples/play_rhythm --tempo 140 --bank B --buttons=1,3
 ```
 
-The library is built with the `LIBPOPPY_EXTRA` macro defined, so it carries
+The library is built with the `LIBPOPS_EXTRA` macro defined, so it carries
 the user pattern slots. A minimal, preset-only library — the 20 factory
 rhythms and nothing else.
 
-Define `LIBPOPPY_FX_REVERB` when building to add the optional send reverb.
+Define `LIBPOPS_FX_REVERB` when building to add the optional send reverb.
 Without it there is no delay memory and the render loop has no reverb code;
 the reverb control API stays available and the effect is bypassed.
 
@@ -56,54 +56,54 @@ disabled where the compiler supports the flags.
 ## Using it
 
 ```c
-#include <mp7.h>
+#include <pops.h>
 
-mp7_context ctx = mp7_create_context(44100);
+pops_context ctx = pops_create_context(44100);
 if (ctx == NULL) { /* out of memory */ }
 
 int16_t block[128 * 2];
-mp7_process(ctx, block, 128);      /* from the audio ISR */
+pops_process(ctx, block, 128);      /* from the audio ISR */
 
-mp7_destroy_context(ctx);
+pops_destroy_context(ctx);
 ```
 
 Rhythm selection mirrors the panel: a bank A/B switch and a 10-bit mask of
 the pressed rhythm buttons. A selection applies immediately by default; OR
-`MP7_APPLY_NEXT_CYCLE` into the mask to defer it to the next pattern cycle. A
-button mask of 0 means no button is pressed. Use `mp7_stop_rhythms()` to stop
+`POPS_APPLY_NEXT_CYCLE` into the mask to defer it to the next pattern cycle. A
+button mask of 0 means no button is pressed. Use `pops_stop_rhythms()` to stop
 the player.
 
 ```c
-mp7_set_volume(ctx, 65536);                 /* panel 1.0 -> 0.5x master gain */
-mp7_set_balance(ctx, 32768);                /* center */
-mp7_set_instr_gain(ctx, MP7_INSTR_QUIJADA, 65536);
-mp7_set_instr_pan(ctx, MP7_INSTR_QUIJADA, 32768);   /* center, 0 = left, 65536 = right */
-mp7_set_tempo(ctx, 120);
+pops_set_volume(ctx, 65536);                 /* panel 1.0 -> 0.5x master gain */
+pops_set_balance(ctx, 32768);                /* center */
+pops_set_instr_gain(ctx, POPS_INSTR_QUIJADA, 65536);
+pops_set_instr_pan(ctx, POPS_INSTR_QUIJADA, 32768);   /* center, 0 = left, 65536 = right */
+pops_set_tempo(ctx, 120);
 
 /* Bank A, Waltz + Samba buttons latched, applied now. */
-mp7_select_rhythm(ctx, MP7_BANK_A,
-    mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ) |
-    mp7_rhythm_button_bit(MP7_RHYTHM_SAMBA));
+pops_select_rhythm(ctx, POPS_BANK_A,
+    pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) |
+    pops_rhythm_button_bit(POPS_RHYTHM_SAMBA));
 
 /* Switch to bank B button 0 (Jazz Waltz) at the next cycle. */
-mp7_select_rhythm(ctx, mp7_rhythm_bank(MP7_RHYTHM_JAZZ_WALTZ),
-    mp7_rhythm_button_bit(MP7_RHYTHM_JAZZ_WALTZ) | MP7_APPLY_NEXT_CYCLE);
+pops_select_rhythm(ctx, pops_rhythm_bank(POPS_RHYTHM_JAZZ_WALTZ),
+    pops_rhythm_button_bit(POPS_RHYTHM_JAZZ_WALTZ) | POPS_APPLY_NEXT_CYCLE);
 
 /* no buttons: percussion only, applied now */
-mp7_select_rhythm(ctx, MP7_BANK_A, 0);
+pops_select_rhythm(ctx, POPS_BANK_A, 0);
 ```
 
 The panel state is available for a UI or lamp driver without callbacks:
 
 ```c
-struct mp7_panel_state state;
-mp7_get_panel_state(ctx, &state);
+struct pops_panel_state state;
+pops_get_panel_state(ctx, &state);
 
 /* stopped: light the lens for state.bank; running: pulse it when
  * state.flash_count advances. */
 ```
 
-`struct mp7_panel_state` carries the applied bank and button mask, any pending
+`struct pops_panel_state` carries the applied bank and button mask, any pending
 selection, the transport state, the current grid column and a monotonic lamp
 flash counter. The flash counter advances on two grid points: the first
 enabled column at or after column 31, and the cycle wrap. The host owns the
@@ -115,8 +115,8 @@ holds it, so a note you hold is not cut off by the pattern, the pattern is not
 cut off by your note-off, and a note that arrives while the gate is already
 open does not restart the ratchet.
 
-The library is not thread-safe: `mp7_process()` and the setters must not run at
-the same time, and `mp7_create_context()` / `mp7_destroy_context()` must not run
+The library is not thread-safe: `pops_process()` and the setters must not run at
+the same time, and `pops_create_context()` / `pops_destroy_context()` must not run
 at the same time as either.
 
 ## User-defined patterns
@@ -131,52 +131,52 @@ percussion layer: its grid may use every instrument, the Tambourine, Guiro
 and Quijada included, and the shared layer is never added to it.
 
 ```c
-#include <mp7.h>
+#include <pops.h>
 
-struct mp7_user_pattern pattern;
+struct pops_user_pattern pattern;
 
 /* 64 columns of 16-bit instrument masks, bit n = instrument n plays. */
 for (unsigned int column = 0; column < 64; column++) {
     pattern.notes[column] = ((column % 8) == 0)
-        ? (uint16_t)((1u << MP7_INSTR_BASS) | (1u << MP7_INSTR_COWBELL))
+        ? (uint16_t)((1u << POPS_INSTR_BASS) | (1u << POPS_INSTR_COWBELL))
         : 0;
 }
-pattern.timesig = MP7_TIMESIG_4_4;  /* the metric of the grid */
+pattern.timesig = POPS_TIMESIG_4_4;  /* the metric of the grid */
 
-mp7_set_user_pattern(ctx, 0, &pattern);  /* slot 0 = bank A, button 0 */
-mp7_set_pattern_source(ctx, MP7_PATTERN_SOURCE_USER);
-mp7_select_rhythm(ctx, MP7_BANK_A, mp7_rhythm_button_bit(MP7_RHYTHM_WALTZ));
+pops_set_user_pattern(ctx, 0, &pattern);  /* slot 0 = bank A, button 0 */
+pops_set_pattern_source(ctx, POPS_PATTERN_SOURCE_USER);
+pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
 ```
 
 The time signature is the only way to shape the grid: the library derives the
 step-enable mask from it, so a pattern cannot carry a custom mask (sorry, no
 3/5 patterns for now). Valid signatures are 2/4, 3/4, 4/4, 5/4, 6/8 and 7/4.
-`mp7_timesig_enable_mask()` returns the mask of each of them. The 2/4, 5/4 and
+`pops_timesig_enable_mask()` returns the mask of each of them. The 2/4, 5/4 and
 6/8 signatures play on the compound grid; the others play straight.
 
-`mp7_get_user_pattern()` reads a slot back, `mp7_set_user_pattern(ctx, index,
-NULL)` empties one, and `mp7_reset()` keeps the slots but returns to the
+`pops_get_user_pattern()` reads a slot back, `pops_set_user_pattern(ctx, index,
+NULL)` empties one, and `pops_reset()` keeps the slots but returns to the
 preset source. A pattern that is playing changes with the pattern.
 
 ## Synthesis tweaks
 
-The extended build (`LIBPOPPY_EXTRA`, which is the default) exposes a few
+The extended build (`LIBPOPS_EXTRA`, which is the default) exposes a few
 synthesis parameters that the original unit keeps fixed. They are not panel
 controls, and they start from the factory values, so a context that never
 touches them sounds exactly like the preset build.
 
 ```c
-mp7_set_accent_gain(ctx, 78643);                       /* accented columns, 1.2x (Q16 units) */
-mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_1, 65536);    /* Snare 1 decay, 1.0x (Q16 units) */
-mp7_set_instr_decay(ctx, MP7_INSTR_SNARE_2, 65536);    /* Snare 2 decay, 1.0x (Q16 units) */
-mp7_set_instr_decay(ctx, MP7_INSTR_HIHAT, 65536);      /* Hihat decay, 1.0x (Q16 units) */
-mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_1, 5500);    /* Snare 1 band-pass, Hz */
-mp7_set_instr_cutoff(ctx, MP7_INSTR_SNARE_2, 5500);    /* Snare 2 band-pass, Hz */
-mp7_set_instr_cutoff(ctx, MP7_INSTR_HIHAT, 10000);     /* Hihat band-pass, Hz */
+pops_set_accent_gain(ctx, 78643);                       /* accented columns, 1.2x (Q16 units) */
+pops_set_instr_decay(ctx, POPS_INSTR_SNARE_1, 65536);    /* Snare 1 decay, 1.0x (Q16 units) */
+pops_set_instr_decay(ctx, POPS_INSTR_SNARE_2, 65536);    /* Snare 2 decay, 1.0x (Q16 units) */
+pops_set_instr_decay(ctx, POPS_INSTR_HIHAT, 65536);      /* Hihat decay, 1.0x (Q16 units) */
+pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_1, 5500);    /* Snare 1 band-pass, Hz */
+pops_set_instr_cutoff(ctx, POPS_INSTR_SNARE_2, 5500);    /* Snare 2 band-pass, Hz */
+pops_set_instr_cutoff(ctx, POPS_INSTR_HIHAT, 10000);     /* Hihat band-pass, Hz */
 ```
 
 The accent gain applies to user-pattern columns that set the
-`MP7_PATTERN_ACCENT` bit, and is read when the column fires, so a change
+`POPS_PATTERN_ACCENT` bit, and is read when the column fires, so a change
 takes effect on the notes triggered after it. The decay controls scale the
 factory decay time of the Snare 1, Snare 2 and Hihat; a note that is already
 sounding keeps playing and decays at the new rate. The cut-offs move the
@@ -188,23 +188,23 @@ None of them costs anything per sample: the accent is folded into the gain
 the mixer already applies to a voice, and the others only recompute
 coefficients between blocks.
 
-`mp7_get_instr_decay()` and `mp7_get_instr_cutoff()` read the values back.
+`pops_get_instr_decay()` and `pops_get_instr_cutoff()` read the values back.
 
 The cut-offs are also limited to two fifths of the sample rate, because a
 biquad is only stable below Nyquist. At 44100 Hz that limit is above
 15000 Hz, so the whole documented range is available at the default rate.
 
-`mp7_reset()` restores the factory defaults for all of them.
+`pops_reset()` restores the factory defaults for all of them.
 
 ## Reverb
 
-Build with `-DLIBPOPPY_FX_REVERB` to compile the optional stereo reverb. It is
+Build with `-DLIBPOPS_FX_REVERB` to compile the optional stereo reverb. It is
 a send effect: every instrument has its own send level, and the wet return is
 added to the dry mix.
 
 ```c
-mp7_set_instr_fx_send(ctx, MP7_INSTR_SNARE_1, 65536);  /* full send */
-mp7_set_instr_fx_send(ctx, MP7_INSTR_BASS, 0);         /* no send */
+pops_set_instr_fx_send(ctx, POPS_INSTR_SNARE_1, 65536);  /* full send */
+pops_set_instr_fx_send(ctx, POPS_INSTR_BASS, 0);         /* no send */
 ```
 
 The reverb's room size, level, damping and width are fixed at build time, so
@@ -216,5 +216,5 @@ with the build macros `MP7_FX_ROOM_SIZE_Q16`, `MP7_FX_LEVEL_Q16`,
 The send levels default to 0, so enabling the reverb does not change the
 factory mix until a send is raised. The bus is bypassed completely when no
 instrument sends to it; the delay memory is allocated once with the context.
-`mp7_get_instr_fx_send()` reads the send values back. Without the build macro
+`pops_get_instr_fx_send()` reads the send values back. Without the build macro
 the reverb never renders.
