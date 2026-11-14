@@ -81,6 +81,14 @@ pops_set_instr_pan(ctx, POPS_INSTR_QUIJADA, 32768);   /* center, 0 = left, 65536
 pops_set_tempo(ctx, 120, 0);                 /* 120 BPM; frac_q16 = 1/65536 beats */
 pops_set_tempo_us(ctx, 500000);              /* MIDI tempo format: 500000 us is 120 BPM */
 
+/* External step clock: pops_process() no longer advances the pattern, one
+ * pops_next_step() call per sync event plays one step of the grid. */
+pops_set_tempo(ctx, 0, 0);
+pops_select_rhythm(ctx, POPS_BANK_A, 1);
+/* ... on each sync event from the host: */
+pops_next_step(ctx);
+/* ... any real tempo (e.g. pops_set_tempo(ctx, 120, 0)) resumes the clock. */
+
 /* Bank A, Waltz + Samba buttons latched, applied now. */
 pops_select_rhythm(ctx, POPS_BANK_A,
     pops_rhythm_button_bit(POPS_RHYTHM_WALTZ) |
@@ -93,6 +101,17 @@ pops_select_rhythm(ctx, pops_rhythm_bank(POPS_RHYTHM_JAZZ_WALTZ),
 /* no buttons: percussion only, applied now */
 pops_select_rhythm(ctx, POPS_BANK_A, 0);
 ```
+
+With `pops_set_tempo(ctx, 0, 0)` the sequencer switches to the external step
+clock: the sample clock stops moving the playhead and each
+`pops_next_step()` call plays one step of the grid (the first call fires the
+column the playhead rests on, every further one moves on and fires). A host
+that receives sync events paces the calls from its own source — e.g. every
+third or fourth MIDI clock tick, or one call per step event. Disabled
+columns are skipped, a `POPS_APPLY_NEXT_CYCLE` selection is applied when a
+call wraps the cycle and the panel state follows as usual; any real tempo
+resumes the internal clock from the current position. The Guiro gate a
+pattern holds open stays open while the calls pause.
 
 The panel state is available for a UI or lamp driver without callbacks:
 

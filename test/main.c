@@ -3965,17 +3965,20 @@ static int command_api(void)
         fail("pops_set_tempo(120, 0) did not give a 22050-sample beat");
     }
     pops_set_tempo(ctx, 0u, 0u);
-    if (ctx->sequencer.tempo_q16 != 65536u) {
-        fail("pops_set_tempo(0, 0) is not clamped to 1 BPM");
+    if ((ctx->sequencer.tempo_q16 != 0u) || (ctx->sequencer.external_clock == 0u)) {
+        fail("pops_set_tempo(0, 0) did not enter the external step clock");
     }
     pops_set_tempo(ctx, 1000u, 0u);
-    if (ctx->sequencer.tempo_q16 != 240u * 65536u) {
-        fail("pops_set_tempo(1000, 0) is not clamped to 240 BPM");
+    if ((ctx->sequencer.tempo_q16 != 240u * 65536u) ||
+        (ctx->sequencer.external_clock != 0u)) {
+        fail("pops_set_tempo(1000, 0) did not leave the external step clock");
     }
     /* The fraction joins the clamp: 0.99998 BPM clamps up to 1.0 and
-     * 240.000015 clamps down to 240.0. */
+     * 240.000015 clamps down to 240.0. The sentinel is the exact (0, 0) pair,
+     * so a fraction alone is still a tempo. */
     pops_set_tempo(ctx, 0u, 65535u);
-    if (ctx->sequencer.tempo_q16 != 65536u) {
+    if ((ctx->sequencer.tempo_q16 != 65536u) ||
+        (ctx->sequencer.external_clock != 0u)) {
         fail("pops_set_tempo(0, 65535) is not clamped to 1.0 BPM");
     }
     pops_set_tempo(ctx, 240u, 1u);
@@ -4119,6 +4122,145 @@ static int command_api(void)
             fail("a MIDI microseconds tempo drifts off the exact beat period");
         } else {
             ok("a fractional MIDI tempo holds the exact beat");
+        }
+    }
+
+    /* The external step clock: pops_set_tempo(0, 0) stops the sample clock
+     * and pops_next_step() drives the steps, one call per step. */
+    {
+        const unsigned int frames = 512u;
+        int16_t stereo[1024];
+        unsigned int enabled_columns = 0u;
+        unsigned int i;
+        uint8_t first_column;
+        uint8_t previous;
+        uint32_t flash;
+
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_set_tempo(ctx, 0u, 0u);
+        if ((ctx->sequencer.external_clock == 0u) ||
+            (ctx->sequencer.tempo_q16 != 0u)) {
+            fail("pops_set_tempo(0, 0) did not enter the external step clock");
+        } else {
+            ok("pops_set_tempo(0, 0) enters the external step clock");
+        }
+
+        /* No transport, no step: the call is inert until a rhythm plays. */
+        if (pops_next_step(ctx) || pops_next_step(0)) {
+            fail("pops_next_step() played a step with nothing to play");
+        } else {
+            ok("pops_next_step() plays no step while stopped");
+        }
+
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                           pops_rhythm_button_bit(POPS_RHYTHM_WALTZ));
+        if (!pops_rhythm_running(ctx)) {
+            fail("selecting a rhythm did not start the transport");
+        }
+
+        /* Rendering does not move the playhead any more. */
+        first_column = ctx->sequencer.column;
+        flash = ctx->sequencer.flash_count;
+        for (i = 0u; i < 40u; i++) {
+            pops_process(ctx, stereo, frames);
+        }
+        if ((ctx->sequencer.column != first_column) ||
+            (ctx->sequencer.flash_count != flash)) {
+            fail("pops_process() moved the playhead of the external step clock");
+        } else {
+            ok("the external step clock stands still between steps");
+        }
+
+        /* The first call fires the column the playhead rests on; every
+         * further call moves to the next enabled column and fires it. */
+        for (i = 0u; i < (unsigned int)MP7_PATTERN_STEPS; i++) {
+            if ((ctx->sequencer.enable & ((uint64_t)1u << i)) != 0u) {
+                enabled_columns++;
+            }
+        }
+        if (!pops_next_step(ctx) || (ctx->sequencer.column != first_column) ||
+            (ctx->sequencer.column_fired != 1u)) {
+            fail("the first step did not fire the column the playhead rests on");
+        } else {
+            ok("the first step fires the column the playhead rests on");
+        }
+
+        /* Every step lands on an enabled column. */
+        if ((ctx->sequencer.enable & ((uint64_t)1u << ctx->sequencer.column)) == 0u) {
+            fail("the step clock played a disabled column");
+        }
+
+        /* A queued selection is applied when a step wraps the cycle, the
+         * same way it is under the sample clock. The Waltz enables 48 of
+         * the 64 columns, so the wrap is the 48th call after the first. */
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                           pops_rhythm_button_bit(POPS_RHYTHM_SAMBA) |
+                           POPS_APPLY_NEXT_CYCLE);
+        for (i = 1u; i < enabled_columns; i++) {
+            if (!pops_next_step(ctx)) {
+                fail("the step clock stopped before the cycle wrapped");
+                break;
+            }
+            if (ctx->sequencer.selected !=
+                (uint32_t)pops_rhythm_button_bit(POPS_RHYTHM_WALTZ)) {
+                fail("the queued selection was applied before the wrap");
+                break;
+            }
+            if ((ctx->sequencer.enable &
+                 ((uint64_t)1u << ctx->sequencer.column)) == 0u) {
+                fail("the step clock played a disabled column");
+                break;
+            }
+        }
+        if (!pops_next_step(ctx)) {
+            fail("the step clock stopped at the cycle wrap");
+        } else if (ctx->sequencer.selected !=
+                   (uint32_t)pops_rhythm_button_bit(POPS_RHYTHM_SAMBA)) {
+            fail("the queued selection was not applied at the step wrap");
+        } else {
+            ok("the queued selection is applied when the steps wrap the cycle");
+        }
+
+        /* Any real tempo leaves the step clock, the playhead keeps its
+         * position and the sample clock drives the playhead again. */
+        previous = ctx->sequencer.column;
+        pops_set_tempo(ctx, 120u, 0u);
+        if ((ctx->sequencer.external_clock != 0u) ||
+            (ctx->sequencer.tempo_q16 != 120u * 65536u)) {
+            fail("pops_set_tempo(120, 0) did not leave the external step clock");
+        } else if (pops_next_step(ctx)) {
+            fail("pops_next_step() played a step under the internal clock");
+        } else {
+            for (i = 0u; i < 20000u; i++) {
+                mp7_pattern_tick(ctx);
+            }
+             if (ctx->sequencer.column == previous) {
+                fail("the sample clock did not resume advancing with a tempo");
+            } else {
+                ok("leaving the external step clock resumes the sample clock");
+            }
+        }
+
+        /* The MIDI-microseconds tempo leaves the step clock as well. */
+        pops_set_tempo(ctx, 0u, 0u);
+        if (ctx->sequencer.external_clock == 0u) {
+            fail("could not re-enter the external step clock");
+        } else {
+            previous = ctx->sequencer.column;
+            pops_set_tempo_us(ctx, 500000u);
+            if ((ctx->sequencer.external_clock != 0u) ||
+                (ctx->sequencer.tempo_q16 != 120u * 65536u)) {
+                fail("pops_set_tempo_us() did not leave the external step clock");
+            } else {
+                for (i = 0u; i < 20000u; i++) {
+                    mp7_pattern_tick(ctx);
+                }
+                if (ctx->sequencer.column == previous) {
+                    fail("the sample clock stayed frozen after pops_set_tempo_us()");
+                } else {
+                    ok("pops_set_tempo_us() leaves the external step clock");
+                }
+            }
         }
     }
 

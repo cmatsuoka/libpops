@@ -549,6 +549,12 @@ struct mp7_voice {
  * it is set and `selected` is zero, the combined grid is the fixed
  * Tambourine/Guiro/Quijada percussion layer.
  *
+ * `external_clock` is the external step clock: the sample clock stops
+ * advancing the playhead and every step is a call to
+ * mp7_pattern_next_step(), so a host that receives sync events can drive
+ * the steps. It is entered with a zero tempo and left with any other one,
+ * and while it lasts the beat period is dormant.
+ *
  * `source` is the set of patterns the selection refers to: the factory
  * rhythms or, in an extended build, the user slots. */
 struct mp7_sequencer {
@@ -576,6 +582,7 @@ struct mp7_sequencer {
     uint8_t guiro_gated;                   /* the sequencer's own Guiro gate */
     uint8_t pending_valid;
     uint8_t running;                       /* transport: false after a stop */
+    uint8_t external_clock;                /* steps arrive from the host */
     uint8_t source;                        /* MP7_SOURCE_PRESET or _USER */
 };
 
@@ -687,6 +694,10 @@ void mp7_pattern_combine(struct mp7_context_s *ctx, uint32_t selected_mask);
  * microseconds-per-quarter-note value. Both store the exact beat period. */
 void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm_q16);
 void mp7_pattern_set_tempo_us(struct mp7_context_s *ctx, uint32_t us_per_quarter);
+/* Advance the pattern by one step under the external step clock. Returns 0
+ * when the clock is not external, the transport is stopped or there is
+ * nothing to play. */
+int mp7_pattern_next_step(struct mp7_context_s *ctx);
 void mp7_pattern_reset(struct mp7_context_s *ctx);
 void mp7_pattern_tick(struct mp7_context_s *ctx);
 

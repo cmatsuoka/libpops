@@ -28,7 +28,7 @@ extern "C" {
  * The plain integer constants keep POPS_VERSION_NUMBER usable in #if. */
 #define POPS_VERSION_MAJOR 0
 #define POPS_VERSION_MINOR 6
-#define POPS_VERSION_PATCH 0
+#define POPS_VERSION_PATCH 1
 #define POPS_VERSION_NUMBER \
     ((POPS_VERSION_MAJOR << 16) | (POPS_VERSION_MINOR << 8) | POPS_VERSION_PATCH)
 
@@ -284,6 +284,13 @@ void pops_stop_rhythms(pops_context ctx);
  * `frac_q16` 1/65536ths of a beat. (120, 0) is 120 BPM, (120, 32768) is
  * 120.5 BPM. The combined value is clamped to 1.0..240.0; default 120.0.
  *
+ * (0, 0) is the sentinel of the external step clock: the sequencer stops
+ * advancing against the sample clock and pops_next_step() advances the
+ * pattern one step per call, so a host that receives sync events can drive
+ * the steps. Any other value (including (0, n) with n > 0) resumes the
+ * internal clock; pops_set_tempo_us() has no sentinel and its 0 clamps to
+ * the fastest tempo.
+ *
  * The beat period is stored as an exact whole-sample count plus a fraction
  * that is accumulated across beats, so a fractional tempo does not drift
  * against the ideal grid. */
@@ -296,6 +303,30 @@ void pops_set_tempo(pops_context ctx, uint16_t bpm, uint16_t frac_q16);
  * The conversion into a beat period is exact, so a host feeding MIDI-file or
  * MIDI-clock tempos does not accumulate drift. */
 void pops_set_tempo_us(pops_context ctx, uint32_t us_per_quarter);
+
+/* Advance the pattern by one step under the external step clock, and return
+ * whether a step was played.
+ *
+ * The mode is entered with pops_set_tempo(ctx, 0, 0). In it the sample
+ * clock does not move the playhead: pops_process() renders the sounding
+ * voices but the pattern stands still until this call. Each call is one
+ * step of the grid: the first one fires the column the playhead rests on
+ * (the first step after a start), and every further call moves the playhead
+ * to the next enabled column and fires it. A column the step-enable mask
+ * disables is skipped, a queued rhythm selection is applied when a call
+ * wraps the cycle, and the pilot/tempo lamp follows the playhead as usual.
+ *
+ * The host owns the step length entirely, so the caller has to pace the
+ * calls from its own sync source (e.g. every third or fourth MIDI clock
+ * tick, or one call per step event). The beat period of a previous tempo is
+ * dormant while the mode lasts. A Guiro gate the pattern holds open stays
+ * open while the calls pause.
+ *
+ * The call returns false, and does nothing, when the mode is not entered,
+ * when the transport is stopped or when the pattern has nothing to play.
+ * The library is not thread-safe: call it where the setters are called,
+ * never while pops_process() is running on another thread. */
+bool pops_next_step(pops_context ctx);
 
 /* True while the sequencer transport is running, including the no-key case
  * where only the fixed percussion layer plays. False after pops_stop_rhythms()

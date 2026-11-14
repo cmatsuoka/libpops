@@ -488,7 +488,7 @@ static void app_main(void)
     flags = irq_lock();
     app_ctx = pops_create_context(FS);
     if (app_ctx != 0) {
-        pops_set_tempo(app_ctx, app_tempo);
+        pops_set_tempo(app_ctx, app_tempo, 0u);
         pops_set_instr_gain(app_ctx, POPS_INSTR_TAMBOURINE, app_gain_tambourine);
         pops_set_instr_gain(app_ctx, POPS_INSTR_GUIRO, app_gain_guiro);
         pops_set_instr_gain(app_ctx, POPS_INSTR_QUIJADA, app_gain_quijada);

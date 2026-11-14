@@ -435,6 +435,17 @@ void pops_set_tempo_us(pops_context ctx, uint32_t us_per_quarter)
     mp7_pattern_set_tempo_us(c, us_per_quarter);
 }
 
+bool pops_next_step(pops_context ctx)
+{
+    struct mp7_context_s *c = (struct mp7_context_s *)ctx;
+
+    if (c == 0) {
+        return false;
+    }
+
+    return mp7_pattern_next_step(c) != 0;
+}
+
 bool pops_rhythm_running(const void *ctx)
 {
     const struct mp7_context_s *c = (const struct mp7_context_s *)ctx;

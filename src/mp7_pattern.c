@@ -32,6 +32,11 @@
  * columns through integer remainders, so the grid drifts neither within a
  * beat nor over time. Triggers are evaluated before the sample at a column
  * boundary is rendered.
+ *
+ * A tempo of zero is the external step clock: the sample clock stops
+ * advancing the playhead, and every step is a call to
+ * mp7_pattern_next_step(), which moves the playhead the way a column
+ * boundary of the sample clock does. The pacing of the steps is the host's.
  */
 
 #include <string.h>
@@ -250,10 +255,24 @@ static void set_beat_period(struct mp7_sequencer *seq, uint64_t num, uint32_t de
 }
 
 /* tempo_q16 is the tempo in BPM scaled by 65536. The exact beat period is
- * 60 * sample_rate * 65536 / tempo_q16 samples. */
+ * 60 * sample_rate * 65536 / tempo_q16 samples.
+ *
+ * tempo_q16 == 0 is the external step clock: the beat period is dormant and
+ * the steps arrive from mp7_pattern_next_step() instead. The phase is
+ * marked fresh, so returning to an internal tempo later starts a clean
+ * beat. */
 void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm_q16)
 {
     struct mp7_sequencer *seq = &ctx->sequencer;
+
+    if (bpm_q16 == 0u) {
+        seq->external_clock = 1u;
+        seq->tempo_q16 = 0u;
+        seq->beat_den = 0u;
+        return;
+    }
+
+    seq->external_clock = 0u;
 
     if (bpm_q16 < MP7_MIN_TEMPO) {
         bpm_q16 = MP7_MIN_TEMPO;
@@ -272,6 +291,8 @@ void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm_q16)
 void mp7_pattern_set_tempo_us(struct mp7_context_s *ctx, uint32_t us_per_quarter)
 {
     struct mp7_sequencer *seq = &ctx->sequencer;
+
+    seq->external_clock = 0u;
 
     if (us_per_quarter < MP7_MAX_TEMPO_US) {
         us_per_quarter = MP7_MAX_TEMPO_US;
@@ -572,6 +593,26 @@ static void fire_column(struct mp7_context_s *ctx)
 #endif
 }
 
+/* One step boundary: the column that was running has used up its time. The
+ * playhead moves to the next enabled column and fires right away: a column
+ * that a rhythm change disabled takes no time. Returns 0 when the sequencer
+ * has nothing left to play. */
+static int step_boundary(struct mp7_context_s *ctx)
+{
+    struct mp7_sequencer *seq = &ctx->sequencer;
+
+    if (seq->column_fired != 0u) {
+        seq->column_fired = 0u;
+        if (advance_column(ctx) == 0) {
+            return 0;
+        }
+    }
+
+    fire_column(ctx);
+    seq->column_fired = 1u;
+    return 1;
+}
+
 void mp7_pattern_tick(struct mp7_context_s *ctx)
 {
     struct mp7_sequencer *seq;
@@ -580,6 +621,13 @@ void mp7_pattern_tick(struct mp7_context_s *ctx)
         return;
     }
     seq = &ctx->sequencer;
+
+    /* The external step clock: the sample clock does not move the playhead,
+     * every step is a call to mp7_pattern_next_step(). The voices are still
+     * rendered, and what is sounding decays on its own. */
+    if (seq->external_clock != 0u) {
+        return;
+    }
 
     if (seq->enable == 0u) {
         return;
@@ -590,17 +638,25 @@ void mp7_pattern_tick(struct mp7_context_s *ctx)
         return;
     }
 
-    /* The column that was running has used up its time. The playhead moves
-     * to the next enabled column, which fires right away: a column that a
-     * rhythm change disabled takes no time. */
-    if (seq->column_fired != 0u) {
-        seq->column_fired = 0u;
-        if (advance_column(ctx) == 0) {
-            return;
-        }
+    (void)step_boundary(ctx);
+    seq->column_pos = column_length(seq) - 1u;
+}
+
+/* One step under the external step clock. The playhead moves the way it does
+ * at a step boundary of the sample clock; only the pacing is the host's. */
+int mp7_pattern_next_step(struct mp7_context_s *ctx)
+{
+    struct mp7_sequencer *seq;
+
+    if (ctx == 0) {
+        return 0;
+    }
+    seq = &ctx->sequencer;
+
+    if ((seq->external_clock == 0u) || (seq->running == 0u) ||
+        (seq->enable == 0u)) {
+        return 0;
     }
 
-    fire_column(ctx);
-    seq->column_fired = 1u;
-    seq->column_pos = column_length(seq) - 1u;
+    return step_boundary(ctx);
 }
