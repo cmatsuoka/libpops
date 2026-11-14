@@ -27,7 +27,7 @@ extern "C" {
 /* Library version. major/minor/patch are packed as 0x00MMmmpp.
  * The plain integer constants keep POPS_VERSION_NUMBER usable in #if. */
 #define POPS_VERSION_MAJOR 0
-#define POPS_VERSION_MINOR 5
+#define POPS_VERSION_MINOR 6
 #define POPS_VERSION_PATCH 0
 #define POPS_VERSION_NUMBER \
     ((POPS_VERSION_MAJOR << 16) | (POPS_VERSION_MINOR << 8) | POPS_VERSION_PATCH)
@@ -280,8 +280,22 @@ void pops_select_rhythm(pops_context ctx, pops_bank bank, uint16_t buttons);
  * rhythm buttons, which keeps the percussion layer running. */
 void pops_stop_rhythms(pops_context ctx);
 
-/* Set the internal tempo in BPM. Clamped to 1..240; default 120. */
-void pops_set_tempo(pops_context ctx, uint16_t bpm);
+/* Set the internal tempo in quarter notes per minute: `bpm` whole beats plus
+ * `frac_q16` 1/65536ths of a beat. (120, 0) is 120 BPM, (120, 32768) is
+ * 120.5 BPM. The combined value is clamped to 1.0..240.0; default 120.0.
+ *
+ * The beat period is stored as an exact whole-sample count plus a fraction
+ * that is accumulated across beats, so a fractional tempo does not drift
+ * against the ideal grid. */
+void pops_set_tempo(pops_context ctx, uint16_t bpm, uint16_t frac_q16);
+
+/* Set the internal tempo in microseconds per quarter note, the tempo format
+ * of MIDI files: 500000 is 120 BPM. Clamped to 250000 (240 BPM) and
+ * 60000000 (1 BPM); 0 clamps to 250000.
+ *
+ * The conversion into a beat period is exact, so a host feeding MIDI-file or
+ * MIDI-clock tempos does not accumulate drift. */
+void pops_set_tempo_us(pops_context ctx, uint32_t us_per_quarter);
 
 /* True while the sequencer transport is running, including the no-key case
  * where only the fixed percussion layer plays. False after pops_stop_rhythms()

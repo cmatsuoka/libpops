@@ -78,7 +78,8 @@ pops_set_volume(ctx, 65536);                 /* panel 1.0 -> 0.5x master gain */
 pops_set_balance(ctx, 32768);                /* center */
 pops_set_instr_gain(ctx, POPS_INSTR_QUIJADA, 65536);
 pops_set_instr_pan(ctx, POPS_INSTR_QUIJADA, 32768);   /* center, 0 = left, 65536 = right */
-pops_set_tempo(ctx, 120);
+pops_set_tempo(ctx, 120, 0);                 /* 120 BPM; frac_q16 = 1/65536 beats */
+pops_set_tempo_us(ctx, 500000);              /* MIDI tempo format: 500000 us is 120 BPM */
 
 /* Bank A, Waltz + Samba buttons latched, applied now. */
 pops_select_rhythm(ctx, POPS_BANK_A,

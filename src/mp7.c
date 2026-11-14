@@ -156,7 +156,7 @@ void pops_set_sample_rate(pops_context ctx, uint32_t sample_rate)
 
     /* Keep the selected rhythms and tempo, but rebuild the timing and start
      * the current pattern from its first enabled column at the new rate. */
-    mp7_pattern_set_tempo(c, c->sequencer.tempo);
+    mp7_pattern_set_tempo(c, c->sequencer.tempo_q16);
     mp7_pattern_reset(c);
 
 #if MP7_FX_REVERB
@@ -415,14 +415,24 @@ void pops_stop_rhythms(pops_context ctx)
     mp7_pattern_reset(c);
 }
 
-void pops_set_tempo(pops_context ctx, uint16_t bpm)
+void pops_set_tempo(pops_context ctx, uint16_t bpm, uint16_t frac_q16)
 {
     struct mp7_context_s *c = (struct mp7_context_s *)ctx;
     if (c == 0) {
         return;
     }
 
-    mp7_pattern_set_tempo(c, (uint32_t)bpm);
+    mp7_pattern_set_tempo(c, ((uint32_t)bpm * 65536u) + (uint32_t)frac_q16);
+}
+
+void pops_set_tempo_us(pops_context ctx, uint32_t us_per_quarter)
+{
+    struct mp7_context_s *c = (struct mp7_context_s *)ctx;
+    if (c == 0) {
+        return;
+    }
+
+    mp7_pattern_set_tempo_us(c, us_per_quarter);
 }
 
 bool pops_rhythm_running(const void *ctx)

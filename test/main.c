@@ -92,6 +92,35 @@ static struct mp7_context_s *context_new(void)
     return ctx;
 }
 
+/* Drive the sample-clocked sequencer until `beats` beats have elapsed and
+ * return the tick index at which the last of them starts. Every visited
+ * column costs one column length, so the returned count is the exact number
+ * of samples the sequencer spent on those beats: `columns_per_beat` is 8 on
+ * the straight grid and 6 on the compound one. */
+static uint64_t run_beats(struct mp7_context_s *ctx,
+                          unsigned int beats,
+                          unsigned int columns_per_beat)
+{
+    const unsigned int boundaries = beats * columns_per_beat;
+    unsigned int seen = 0u;
+    uint8_t previous = ctx->sequencer.column;
+    uint64_t t = 0u;
+
+    for (;;) {
+        mp7_pattern_tick(ctx);
+        if (ctx->sequencer.column != previous) {
+            /* The tick that moves the playhead fires the new column, so its
+             * index is the sample the beats add up to. */
+            previous = ctx->sequencer.column;
+            seen++;
+            if (seen >= boundaries) {
+                return t;
+            }
+        }
+        t++;
+    }
+}
+
 static int command_init(void)
 {
     struct mp7_context_s *ctx = context_new();
@@ -873,7 +902,7 @@ static int command_pattern(void)
      * holds eight columns. The Base row is X...........X...X... so the first
      * hit gaps are 12 and 4 columns. */
     mp7_pattern_combine(ctx, (uint32_t)1u << POPS_RHYTHM_ROCK_1);
-    mp7_pattern_set_tempo(ctx, 120u);
+    mp7_pattern_set_tempo(ctx, 120u * 65536u);
     mp7_pattern_reset(ctx);
     if (ctx->sequencer.beat_samples != 22050u) {
         printf("FAIL: the beat is %u samples, expected 22050\n",
@@ -939,7 +968,7 @@ static int command_pattern(void)
      * every 8 columns and the compound mask enables 6 of every 8, so the hits
      * are 6 columns apart on the grid: the disabled columns take no time. */
     mp7_pattern_combine(ctx, (uint32_t)1u << POPS_RHYTHM_MARCH_6_8);
-    mp7_pattern_set_tempo(ctx, 120u);
+    mp7_pattern_set_tempo(ctx, 120u * 65536u);
     mp7_pattern_reset(ctx);
     {
         const size_t beat = (size_t)ctx->sequencer.beat_samples;
@@ -998,7 +1027,7 @@ static int command_pattern(void)
      * gate must stay open across columns 0..3 and close on column 4. */
     mp7_init(ctx, sample_rate);
     mp7_pattern_combine(ctx, (uint32_t)1u << POPS_RHYTHM_ROCK_1);
-    mp7_pattern_set_tempo(ctx, 120u);
+    mp7_pattern_set_tempo(ctx, 120u * 65536u);
     {
         const size_t column_samples = (size_t)ctx->sequencer.beat_samples / 8u + 1u;
         size_t t;
@@ -2665,7 +2694,7 @@ static int render_rhythm(struct mp7_context_s *ctx,
     size_t frames;
 
     mp7_pattern_combine(ctx, selection);
-    mp7_pattern_set_tempo(ctx, 120u);
+    mp7_pattern_set_tempo(ctx, 120u * 65536u);
     steps = (ctx->sequencer.subdivision == (uint8_t)MP7_SUBDIV_COMPOUND) ? 6u : 8u;
 
     for (column = 0u; column < MP7_PATTERN_STEPS; column++) {
@@ -3930,20 +3959,167 @@ static int command_api(void)
     }
 
     /* Tempo clamping and the beat interval. */
-    pops_set_tempo(ctx, 120u);
-    if ((ctx->sequencer.tempo != 120u) || (ctx->sequencer.beat_samples != 22050u)) {
-        fail("pops_set_tempo(120) did not give a 22050-sample beat");
+    pops_set_tempo(ctx, 120u, 0u);
+    if ((ctx->sequencer.tempo_q16 != 120u * 65536u) ||
+        (ctx->sequencer.beat_samples != 22050u)) {
+        fail("pops_set_tempo(120, 0) did not give a 22050-sample beat");
     }
-    pops_set_tempo(ctx, 0u);
-    if (ctx->sequencer.tempo != 1u) {
-        fail("pops_set_tempo(0) is not clamped to 1 BPM");
+    pops_set_tempo(ctx, 0u, 0u);
+    if (ctx->sequencer.tempo_q16 != 65536u) {
+        fail("pops_set_tempo(0, 0) is not clamped to 1 BPM");
     }
-    pops_set_tempo(ctx, 1000u);
-    if (ctx->sequencer.tempo != 240u) {
-        fail("pops_set_tempo(1000) is not clamped to 240 BPM");
+    pops_set_tempo(ctx, 1000u, 0u);
+    if (ctx->sequencer.tempo_q16 != 240u * 65536u) {
+        fail("pops_set_tempo(1000, 0) is not clamped to 240 BPM");
+    }
+    /* The fraction joins the clamp: 0.99998 BPM clamps up to 1.0 and
+     * 240.000015 clamps down to 240.0. */
+    pops_set_tempo(ctx, 0u, 65535u);
+    if (ctx->sequencer.tempo_q16 != 65536u) {
+        fail("pops_set_tempo(0, 65535) is not clamped to 1.0 BPM");
+    }
+    pops_set_tempo(ctx, 240u, 1u);
+    if (ctx->sequencer.tempo_q16 != 240u * 65536u) {
+        fail("pops_set_tempo(240, 1) is not clamped to 240.0 BPM");
+    }
+    /* A fractional tempo stores its own Q16 value. */
+    pops_set_tempo(ctx, 120u, 32768u);
+    if (ctx->sequencer.tempo_q16 != (120u * 65536u) + 32768u) {
+        fail("pops_set_tempo(120, 32768) did not store 120.5 BPM");
+    }
+    /* The MIDI format. 500000 microseconds per quarter note is exactly
+     * 120 BPM: the same beat the BPM setter gives, and no fraction to
+     * accumulate. The clamps mirror 240 BPM and 1 BPM. */
+    pops_set_tempo_us(ctx, 500000u);
+    if ((ctx->sequencer.tempo_q16 != 120u * 65536u) ||
+        (ctx->sequencer.beat_samples != 22050u)) {
+        fail("pops_set_tempo_us(500000) is not exactly 120 BPM");
+    }
+    pops_set_tempo_us(ctx, 0u);
+    if ((ctx->sequencer.tempo_q16 != 240u * 65536u) ||
+        (ctx->sequencer.beat_samples != 11025u)) {
+        fail("pops_set_tempo_us(0) is not clamped to 240 BPM");
+    }
+    pops_set_tempo_us(ctx, 249999u);
+    if (ctx->sequencer.tempo_q16 != 240u * 65536u) {
+        fail("pops_set_tempo_us(249999) is not clamped to 240 BPM");
+    }
+    pops_set_tempo_us(ctx, 60000001u);
+    if ((ctx->sequencer.tempo_q16 != 65536u) ||
+        (ctx->sequencer.beat_samples != 2646000u)) {
+        fail("pops_set_tempo_us(60000001) is not clamped to 1 BPM");
     }
     if (failures == 0) {
-        ok("pops_set_tempo() clamps to 1..240 and builds the beat");
+        ok("pops_set_tempo() and pops_set_tempo_us() clamp and build the beat");
+    }
+
+    /* The exact beat period: a fractional tempo must not drift. At 120.5 BPM
+     * a beat is not a whole number of samples at 44100 Hz, so a rounded beat
+     * length would wander off; the accumulated fraction must keep the grid
+     * on the ideal rational one. A boundary sits within half a sample of the
+     * ideal and never further: the tempo_q16 field of the context is the
+     * denominator of the ideal. */
+    {
+        const unsigned int beats = 1000u;
+        const uint64_t ideal_num =
+            (uint64_t)beats * 60u * POPS_DEFAULT_SAMPLE_RATE * 65536u;
+        uint64_t den;
+        uint64_t ticks;
+        int drifted = 0;
+
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_set_tempo(ctx, 120u, 32768u);            /* 120.5 BPM */
+        den = ctx->sequencer.tempo_q16;
+        pops_select_rhythm(ctx, POPS_BANK_A, POPS_APPLY_NEXT_CYCLE);
+        ticks = run_beats(ctx, beats, 8u);
+
+        if ((den * ticks) > ideal_num) {
+            drifted = ((den * ticks) - ideal_num) > ((den + 1u) / 2u);
+        } else {
+            drifted = (ideal_num - (den * ticks)) > ((den + 1u) / 2u);
+        }
+        if (drifted) {
+            fail("a fractional tempo drifts off the exact beat period");
+        } else {
+            ok("a fractional tempo holds the exact beat on the straight grid");
+        }
+    }
+
+    /* The same on the compound grid, where a beat holds six visited columns
+     * and the cycle only visits 48 of the 64 columns. */
+    {
+        const unsigned int beats = 1000u;
+        const uint64_t ideal_num =
+            (uint64_t)beats * 60u * POPS_DEFAULT_SAMPLE_RATE * 65536u;
+        uint64_t den;
+        uint64_t ticks;
+        int drifted = 0;
+
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_set_tempo(ctx, 120u, 32768u);            /* 120.5 BPM */
+        den = ctx->sequencer.tempo_q16;
+        pops_select_rhythm(ctx, POPS_BANK_A,
+                           pops_rhythm_button_bit(POPS_RHYTHM_MARCH_6_8) |
+                           POPS_APPLY_NEXT_CYCLE);
+        ticks = run_beats(ctx, beats, 6u);
+
+        if ((den * ticks) > ideal_num) {
+            drifted = ((den * ticks) - ideal_num) > ((den + 1u) / 2u);
+        } else {
+            drifted = (ideal_num - (den * ticks)) > ((den + 1u) / 2u);
+        }
+        if (drifted) {
+            fail("a fractional tempo drifts off the exact beat period");
+        } else {
+            ok("a fractional tempo holds the exact beat on the compound grid");
+        }
+    }
+
+    /* The microseconds-per-quarter-note format converts exactly. 500000 us is
+     * 120 BPM, whose beat is a whole number of samples here, so 1000 beats
+     * must land on the sample, not near it. */
+    {
+        const unsigned int beats = 1000u;
+        const uint64_t ideal_num =
+            (uint64_t)beats * POPS_DEFAULT_SAMPLE_RATE * 500000u;
+        uint64_t ticks;
+
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_set_tempo_us(ctx, 500000u);
+        pops_select_rhythm(ctx, POPS_BANK_A, POPS_APPLY_NEXT_CYCLE);
+        ticks = run_beats(ctx, beats, 8u);
+
+        if ((ticks * 1000000u) != ideal_num) {
+            fail("the MIDI tempo format does not convert exactly");
+        } else {
+            ok("the MIDI tempo format converts exactly into whole samples");
+        }
+    }
+
+    /* A microseconds value whose beat is not a whole number of samples
+     * (44100 * 466999 / 1000000 = 20594.66) must not drift either. */
+    {
+        const unsigned int beats = 1000u;
+        const uint64_t ideal_num =
+            (uint64_t)beats * POPS_DEFAULT_SAMPLE_RATE * 466999u;
+        uint64_t ticks;
+        int drifted = 0;
+
+        mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
+        pops_set_tempo_us(ctx, 466999u);
+        pops_select_rhythm(ctx, POPS_BANK_A, POPS_APPLY_NEXT_CYCLE);
+        ticks = run_beats(ctx, beats, 8u);
+
+        if (((uint64_t)1000000u * ticks) > ideal_num) {
+            drifted = (((uint64_t)1000000u * ticks) - ideal_num) > 500000u;
+        } else {
+            drifted = (ideal_num - ((uint64_t)1000000u * ticks)) > 500000u;
+        }
+        if (drifted) {
+            fail("a MIDI microseconds tempo drifts off the exact beat period");
+        } else {
+            ok("a fractional MIDI tempo holds the exact beat");
+        }
     }
 
     /* Mix controls. */
@@ -4041,7 +4217,7 @@ static int command_api(void)
         if (gain_bad ||
             (ctx->mixer.panel_volume_q16 != POPS_Q16_ONE) ||
             (ctx->mixer.balance_q16 != POPS_Q16_ONE / 2) ||
-            (ctx->sequencer.tempo != 120u) || pops_rhythm_running(ctx)) {
+            (ctx->sequencer.tempo_q16 != 120u * 65536u) || pops_rhythm_running(ctx)) {
             fail("pops_reset() did not restore the panel defaults");
         } else {
             ok("pops_reset() restores the panel defaults");

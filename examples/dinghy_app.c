@@ -339,7 +339,7 @@ static void app_set_tempo(uint16_t bpm)
         return;
     }
     flags = irq_lock();
-    pops_set_tempo(app_ctx, bpm);
+    pops_set_tempo(app_ctx, bpm, 0u);
     irq_unlock(flags);
 }
 

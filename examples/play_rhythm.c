@@ -325,7 +325,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    pops_set_tempo(ctx, (uint16_t)tempo);
+    pops_set_tempo(ctx, (uint16_t)tempo, 0u);
     pops_select_rhythm(ctx, bank, buttons);
 
     signal(SIGINT, handle_signal);

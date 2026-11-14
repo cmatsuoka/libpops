@@ -27,8 +27,11 @@
  * columns. A column that an immediate rhythm change disables is skipped, not
  * waited out. A column lasts a fraction of a beat: the tempo is in quarter
  * notes per minute, and a beat holds eight straight columns (a 32nd note
- * each) or six compound ones (an 8th-note triplet each). Triggers are
- * evaluated before the sample at a column boundary is rendered.
+ * each) or six compound ones (an 8th-note triplet each). The beat period is
+ * held as an exact whole-plus-fraction sample count and is handed out to the
+ * columns through integer remainders, so the grid drifts neither within a
+ * beat nor over time. Triggers are evaluated before the sample at a column
+ * boundary is rendered.
  */
 
 #include <string.h>
@@ -37,11 +40,20 @@
 
 /* A beat is a quarter note, and it holds eight straight columns or six
  * compound ones. The tempo is in quarter notes per minute, so the beat is
- * the only unit the sequencer needs. */
+ * the only unit the sequencer needs. The tempo itself is a Q16 BPM value,
+ * and the beat period derived from it is exact: whole samples plus a
+ * fraction, accumulated across beats. */
 #define MP7_STEPS_PER_BEAT_STRAIGHT 8u
 #define MP7_STEPS_PER_BEAT_COMPOUND 6u
-#define MP7_DEFAULT_TEMPO 120u
-#define MP7_MAX_TEMPO 240u
+#define MP7_DEFAULT_TEMPO (120u * 65536u)
+#define MP7_MIN_TEMPO (1u * 65536u)
+#define MP7_MAX_TEMPO (240u * 65536u)
+
+/* The MIDI-style tempo format: microseconds per quarter note. The fastest
+ * allowed tempo, 240 BPM, is 250000 of them; the slowest, 1 BPM, is
+ * 60000000. */
+#define MP7_MAX_TEMPO_US 250000u
+#define MP7_MIN_TEMPO_US 60000000u
 
 /* The pilot/tempo lamp flashes when the playhead crosses column 31 - the
  * last column of the first 32-column half - and when the playhead wraps.
@@ -60,17 +72,52 @@ static uint32_t steps_per_beat(const struct mp7_sequencer *seq)
                : MP7_STEPS_PER_BEAT_STRAIGHT;
 }
 
+/* Decide the whole-sample length of the beat that is starting and advance
+ * the fractional phase by one beat.
+ *
+ * The phase, beat_remainder, runs in units of 1/beat_den of a sample and
+ * starts at beat_den/2, the phase that rounds to nearest: the beat that is
+ * starting gets its whole part plus the sample the accumulated fractions
+ * have just paid for. The boundary it opens therefore sits within half a
+ * sample of the ideal grid, the beats average exactly and nothing drifts. */
+static void latch_beat(struct mp7_sequencer *seq)
+{
+    seq->beat_remainder += seq->beat_fraction;
+    if (seq->beat_remainder >= seq->beat_den) {
+        seq->beat_remainder -= seq->beat_den;
+        seq->beat_samples = seq->beat_whole + 1u;
+    } else {
+        seq->beat_samples = seq->beat_whole;
+    }
+}
+
 /* The length of the next column, in samples.
  *
- * A beat is beat_samples long and holds steps_per_beat() columns, and it
- * does not divide evenly into them. The leftover samples are handed out one
- * at a time, so every beat lasts exactly as long as the tempo says and no
- * column drifts away from the grid. */
+ * The exact beat period is beat_whole + beat_fraction/beat_den samples, and a
+ * whole-sample length cannot carry that exactly, so latch_beat() hands the
+ * fractions out one sample at a time: one beat in every beat_den/beat_fraction
+ * runs one sample longer. Over time a beat lasts exactly
+ * beat_whole + beat_fraction/beat_den samples and no boundary drifts.
+ *
+ * A beat then holds steps_per_beat() columns, and it does not divide evenly
+ * into them either: the leftover samples are handed out one at a time the
+ * same way, so every column fills its exact share of the beat. Both
+ * accumulators run continuously, so the clock never loses phase. */
 static uint32_t column_length(struct mp7_sequencer *seq)
 {
     uint32_t steps = steps_per_beat(seq);
-    uint32_t length = seq->beat_samples / steps;
+    uint32_t length;
 
+    /* A beat's worth of columns has been visited, so the column being
+     * started here begins a new beat: latch its whole-sample length first.
+     * The beat in play keeps the length it was latched with. */
+    if (seq->beat_progress >= steps) {
+        seq->beat_progress = 0u;
+        latch_beat(seq);
+    }
+    seq->beat_progress++;
+
+    length = seq->beat_samples / steps;
     seq->step_remainder += seq->beat_samples % steps;
     if (seq->step_remainder >= steps) {
         seq->step_remainder -= steps;
@@ -144,38 +191,101 @@ void mp7_pattern_reset(struct mp7_context_s *ctx)
     seq->column_fired = 0u;
     seq->column_pos = 0u;
     seq->step_remainder = 0u;
+    /* The playhead restarts, so the clock restarts with it: the phase goes
+     * back to half a fraction and the first beat is latched from there, the
+     * same way a freshly set tempo starts. */
+    seq->beat_remainder = seq->beat_den / 2u;
+    latch_beat(seq);
+    seq->beat_progress = 0u;
     seq->column = (seq->enable != 0u) ? first_enabled_column(seq) : 0u;
 }
 
-void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm)
+/* Store a new exact beat period: a beat lasts num/den samples. Whole-sample
+ * lengths cannot hold a fractional period, so the period is split into its
+ * whole part and a fraction that column_length() accumulates across beats
+ * and hands back one whole sample at a time. The whole part of the beat in
+ * play is recomputed immediately, and a faster tempo shortens the column
+ * that is running, so the countdown cannot outlast it.
+ *
+ * The accumulated fraction carries over the change, rescaled to the new
+ * denominator: it is a sub-sample phase amount, so keeping it keeps the
+ * clock phase-continuous across a tempo change. */
+static void set_beat_period(struct mp7_sequencer *seq, uint64_t num, uint32_t den)
 {
-    struct mp7_sequencer *seq = &ctx->sequencer;
-    uint64_t numerator;
-    uint64_t denominator;
-    uint32_t step;
+    uint32_t whole = (uint32_t)(num / den);
+    uint32_t fraction = (uint32_t)(num % den);
 
-    if (bpm < 1u) {
-        bpm = 1u;
-    }
-    if (bpm > MP7_MAX_TEMPO) {
-        bpm = MP7_MAX_TEMPO;
-    }
-    seq->tempo = bpm;
+    if (seq->beat_den != 0u) {
+        /* The sub-sample phase carries over a tempo change, rescaled to the
+         * new denominator, so the clock stays phase-continuous. */
+        uint64_t scaled =
+            (((uint64_t)seq->beat_remainder * den) + (seq->beat_den / 2u)) /
+            seq->beat_den;
 
-    /* round(60 * sample_rate / tempo), i.e. floor((120 * sr + tempo) / (2 * tempo)). */
-    numerator = ((uint64_t)120u * (uint64_t)ctx->sample_rate) + (uint64_t)bpm;
-    denominator = (uint64_t)2u * (uint64_t)bpm;
-    step = (uint32_t)(numerator / denominator);
-    if (step == 0u) {
-        step = 1u;
+        seq->beat_remainder = (scaled < den) ? (uint32_t)scaled : 0u;
+    } else {
+        /* A fresh context starts at half a fraction, the phase that rounds
+         * to nearest. */
+        seq->beat_remainder = den / 2u;
     }
-    seq->beat_samples = step;
 
-    /* A faster tempo shortens the column that is running, so the countdown
-     * cannot outlast it. */
+    /* The period cannot be a whole-sample count at any supported rate, and
+     * a beat shorter than one sample cannot be counted down; the guard is
+     * for absurd sample rates only. */
+    if (whole == 0u) {
+        whole = 1u;
+        fraction = 0u;
+    }
+
+    seq->beat_den = den;
+    seq->beat_whole = whole;
+    seq->beat_fraction = fraction;
+
+    /* The beat in play takes its length from the phase just set. */
+    latch_beat(seq);
+
     if (seq->column_pos > seq->beat_samples / steps_per_beat(seq)) {
         seq->column_pos = seq->beat_samples / steps_per_beat(seq);
     }
+}
+
+/* tempo_q16 is the tempo in BPM scaled by 65536. The exact beat period is
+ * 60 * sample_rate * 65536 / tempo_q16 samples. */
+void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm_q16)
+{
+    struct mp7_sequencer *seq = &ctx->sequencer;
+
+    if (bpm_q16 < MP7_MIN_TEMPO) {
+        bpm_q16 = MP7_MIN_TEMPO;
+    }
+    if (bpm_q16 > MP7_MAX_TEMPO) {
+        bpm_q16 = MP7_MAX_TEMPO;
+    }
+    seq->tempo_q16 = bpm_q16;
+
+    set_beat_period(seq, ((uint64_t)60u * ctx->sample_rate) * 65536u, bpm_q16);
+}
+
+/* us_per_quarter is the MIDI tempo format. The exact beat period is
+ * sample_rate * us_per_quarter / 1000000 samples, which this converts
+ * losslessly into the whole-plus-fraction period. */
+void mp7_pattern_set_tempo_us(struct mp7_context_s *ctx, uint32_t us_per_quarter)
+{
+    struct mp7_sequencer *seq = &ctx->sequencer;
+
+    if (us_per_quarter < MP7_MAX_TEMPO_US) {
+        us_per_quarter = MP7_MAX_TEMPO_US;
+    }
+    if (us_per_quarter > MP7_MIN_TEMPO_US) {
+        us_per_quarter = MP7_MIN_TEMPO_US;
+    }
+
+    /* The nearest Q16 BPM value, informational only: the timing follows the
+     * exact period below. */
+    seq->tempo_q16 = (uint32_t)((((uint64_t)60000000u * 65536u) +
+                                 (us_per_quarter / 2u)) / us_per_quarter);
+
+    set_beat_period(seq, (uint64_t)ctx->sample_rate * us_per_quarter, 1000000u);
 }
 
 /* The composition of a selection: the grid the sequencer plays and the card
@@ -325,7 +435,7 @@ void mp7_pattern_combine(struct mp7_context_s *ctx, uint32_t selected_mask)
 void mp7_pattern_init(struct mp7_context_s *ctx)
 {
     memset(&ctx->sequencer, 0, sizeof(ctx->sequencer));
-    ctx->sequencer.tempo = MP7_DEFAULT_TEMPO;
+    ctx->sequencer.tempo_q16 = MP7_DEFAULT_TEMPO;
     mp7_pattern_set_tempo(ctx, MP7_DEFAULT_TEMPO);
     mp7_pattern_combine(ctx, 0u);
 }

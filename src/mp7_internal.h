@@ -524,7 +524,14 @@ struct mp7_voice {
  * The sequencer triggers on column boundaries. A column lasts a fraction of a
  * beat: the tempo is in quarter notes per minute, and a beat holds eight
  * straight columns (a 32nd note each) or six compound ones (an 8th-note
- * triplet each). `column_pos` counts down the samples to the next boundary
+ * triplet each). The beat period is held exactly, as whole samples plus a
+ * fraction: a beat lasts `beat_whole + beat_fraction / beat_den` samples,
+ * `beat_progress` counts the columns of the beat in play and `beat_remainder`
+ * collects the sub-sample part of the beats seen so far, so one accumulated
+ * whole sample is added back to a later beat and the grid never drifts.
+ * `beat_samples` is the whole-sample length of the beat in play.
+ *
+ * `column_pos` counts down the samples to the next boundary
  * and is zero on the sample where the boundary is evaluated; `column_fired`
  * says that the column that is running has already fired its notes.
  *
@@ -547,8 +554,13 @@ struct mp7_voice {
 struct mp7_sequencer {
     uint32_t selected;                     /* bit n = pops_rhythm n */
     uint32_t pending_selected;             /* selection for the next cycle */
-    uint32_t tempo;                        /* BPM, clamped to 1..240 */
-    uint32_t beat_samples;                 /* round(60 * sample_rate / tempo) */
+    uint32_t tempo_q16;                    /* BPM in Q16, clamped to 1.0..240.0 */
+    uint32_t beat_whole;                   /* whole samples of the beat period */
+    uint32_t beat_fraction;                /* beat_fraction/beat_den of one sample */
+    uint32_t beat_den;                     /* denominator of the beat fraction */
+    uint32_t beat_samples;                 /* the beat in play: whole (+1 on carry) */
+    uint32_t beat_remainder;               /* sub-sample beat parts, per beat */
+    uint32_t beat_progress;                /* columns since the last beat latch */
     uint32_t column_pos;                   /* samples until the next boundary */
     uint32_t step_remainder;               /* samples of the beat not yet handed out */
     uint32_t flash_count;                  /* monotonic lamp flash counter */
@@ -671,7 +683,10 @@ void mp7_pattern_compose(struct mp7_context_s *ctx, uint32_t selected,
                          struct pops_pattern_view *out);
 void mp7_pattern_init(struct mp7_context_s *ctx);
 void mp7_pattern_combine(struct mp7_context_s *ctx, uint32_t selected_mask);
-void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm);
+/* Set the tempo from a Q16 BPM value (65536 = 1 BPM) or from a MIDI-style
+ * microseconds-per-quarter-note value. Both store the exact beat period. */
+void mp7_pattern_set_tempo(struct mp7_context_s *ctx, uint32_t bpm_q16);
+void mp7_pattern_set_tempo_us(struct mp7_context_s *ctx, uint32_t us_per_quarter);
 void mp7_pattern_reset(struct mp7_context_s *ctx);
 void mp7_pattern_tick(struct mp7_context_s *ctx);
 
