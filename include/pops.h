@@ -348,8 +348,9 @@ bool pops_rhythm_running(const void *ctx);
  * grid points: at the first beat after the transport starts, when the
  * playhead reaches the first enabled column at or after column 31 - the last
  * column of the first 32-column half - and when the playhead wraps back to
- * the first enabled column. It never decreases, is not reset by
- * pops_stop_rhythms(), and is reset only by pops_reset().
+ * the first enabled column. It never decreases and is not reset by
+ * pops_stop_rhythms(): a fresh context starts it at zero, and only
+ * pops_reset() zeroes it again.
  *
  * The host can drive the two pilot/tempo lamps from this snapshot: light the
  * lamp for `bank` while stopped; while running, pulse that lamp whenever
