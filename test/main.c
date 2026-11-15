@@ -4439,15 +4439,27 @@ static int command_panel(void)
         ok("pops_stop_rhythms() keeps the bank/button indication");
     }
 
-    /* Flash counter: one flash at column 31 and one at the cycle wrap. */
+    /* Flash counter: the lamp flashes at the first beat of a started
+     * transport, at column 31 and at the cycle wrap. */
     mp7_init(ctx, POPS_DEFAULT_SAMPLE_RATE);
     pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
+    guard = 0u;
+    while ((ctx->sequencer.column_fired == 0u) && (guard++ < 300000u)) {
+        mp7_pattern_tick(ctx);
+    }
+    pops_get_panel_state(ctx, &state);
+    if ((ctx->sequencer.column != 0u) || (state.flash_count != 1u)) {
+        fail("the lamp did not flash at the first beat after the start");
+    } else {
+        ok("the lamp flashes at the first beat after the start");
+    }
+
     guard = 0u;
     while ((ctx->sequencer.column != 31u) && (guard++ < 300000u)) {
         mp7_pattern_tick(ctx);
     }
     pops_get_panel_state(ctx, &state);
-    if ((ctx->sequencer.column != 31u) || (state.flash_count != 1u)) {
+    if ((ctx->sequencer.column != 31u) || (state.flash_count != 2u)) {
         fail("the lamp did not flash at the second half of the grid");
     } else {
         ok("the lamp flashes at the second half of the grid");
@@ -4458,7 +4470,7 @@ static int command_panel(void)
         mp7_pattern_tick(ctx);
     }
     pops_get_panel_state(ctx, &state);
-    if ((ctx->sequencer.column != 0u) || (state.flash_count != 2u)) {
+    if ((ctx->sequencer.column != 0u) || (state.flash_count != 3u)) {
         fail("the lamp did not flash at the cycle wrap");
     } else {
         ok("the lamp flashes at the cycle wrap");
@@ -4467,10 +4479,21 @@ static int command_panel(void)
     /* The counter survives a stop; it is only reset by init/reset. */
     pops_stop_rhythms(ctx);
     pops_get_panel_state(ctx, &state);
-    if (state.running || (state.flash_count != 2u)) {
+    if (state.running || (state.flash_count != 3u)) {
         fail("pops_stop_rhythms() reset the lamp flash counter");
     } else {
         ok("the lamp flash counter survives a stop");
+    }
+
+    /* A selection that starts and stops before a beat passes flashes nothing:
+     * the owed flash is taken back with the playhead. */
+    pops_select_rhythm(ctx, POPS_BANK_A, pops_rhythm_button_bit(POPS_RHYTHM_ROCK_1));
+    pops_stop_rhythms(ctx);
+    pops_get_panel_state(ctx, &state);
+    if (state.flash_count != 3u) {
+        fail("a start without a beat changed the lamp flash counter");
+    } else {
+        ok("a start and stop before the first beat flashes nothing");
     }
 
     pops_reset(ctx);

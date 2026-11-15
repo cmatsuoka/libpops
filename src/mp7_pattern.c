@@ -196,6 +196,11 @@ void mp7_pattern_reset(struct mp7_context_s *ctx)
     seq->column_fired = 0u;
     seq->column_pos = 0u;
     seq->step_remainder = 0u;
+    /* A reset drops any owed start flash with the rest of the playhead
+     * state, whether the transport stopped or is restarted in place (as a
+     * sample-rate change does). Only a start after this reset lights the
+     * lamp on its first beat again. */
+    seq->start_flash_pending = 0u;
     /* The playhead restarts, so the clock restarts with it: the phase goes
      * back to half a fraction and the first beat is latched from there, the
      * same way a freshly set tempo starts. */
@@ -606,6 +611,14 @@ static int step_boundary(struct mp7_context_s *ctx)
         if (advance_column(ctx) == 0) {
             return 0;
         }
+    }
+
+    if (seq->start_flash_pending != 0u) {
+        /* The first beat after a start lights the lamp, the way the cycle
+         * wrap does. This covers the step clock as well: every step of it
+         * is a call here. */
+        seq->start_flash_pending = 0u;
+        seq->flash_count++;
     }
 
     fire_column(ctx);

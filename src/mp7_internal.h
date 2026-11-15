@@ -570,6 +570,7 @@ struct mp7_sequencer {
     uint32_t column_pos;                   /* samples until the next boundary */
     uint32_t step_remainder;               /* samples of the beat not yet handed out */
     uint32_t flash_count;                  /* monotonic lamp flash counter */
+    uint8_t start_flash_pending;           /* the first beat after a start owes the lamp a flash */
     uint64_t enable;                       /* combined step-enable mask */
     uint16_t notes[MP7_PATTERN_STEPS];     /* bit n = instrument n plays */
     uint16_t buttons;                      /* applied ten-button mask */

@@ -125,8 +125,9 @@ pops_get_panel_state(ctx, &state);
 
 `struct pops_panel_state` carries the applied bank and button mask, any pending
 selection, the transport state, the current grid column and a monotonic lamp
-flash counter. The flash counter advances on two grid points: the first
-enabled column at or after column 31, and the cycle wrap. The host owns the
+flash counter. The flash counter advances on three grid points: the first
+beat of a started transport, the first enabled column at or after column 31,
+and the cycle wrap. The host owns the
 visible pulse length and the library supplies the events.
 
 The Guiro is the only gated voice. Its gate is shared between the pattern

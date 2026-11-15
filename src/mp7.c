@@ -367,6 +367,14 @@ void pops_select_rhythm(pops_context ctx, pops_bank bank, uint16_t buttons)
 
     c->sequencer.running = 1u;
 
+    /* The first beat of a transport that starts here is the downbeat of the
+     * cycle, so the lamp flashes on it the way it does at the cycle wrap.
+     * The playhead rests on the beat already, no column move wraps there,
+     * and the flash is handed out when the beat fires instead. */
+    if (!was_running) {
+        c->sequencer.start_flash_pending = 1u;
+    }
+
     /* There is no current cycle to finish when the sequencer is stopped, so a
      * deferred selection takes effect immediately and starts the transport. */
     if (apply_next && was_running) {

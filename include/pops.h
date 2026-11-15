@@ -344,11 +344,12 @@ bool pops_rhythm_running(const void *ctx);
  * applied; they are meaningful only when `pending` is true.
  *
  * `column` is the current grid column, 0..63. `flash_count` is a monotonic
- * count of the lamp flashes produced by the sequencer. It advances on two
- * grid points: when the playhead reaches the first enabled column at or
- * after column 31 - the last column of the first 32-column half - and when
- * the playhead wraps back to the first enabled column. It never decreases, is
- * not reset by pops_stop_rhythms(), and is reset only by pops_reset().
+ * count of the lamp flashes produced by the sequencer. It advances on three
+ * grid points: at the first beat after the transport starts, when the
+ * playhead reaches the first enabled column at or after column 31 - the last
+ * column of the first 32-column half - and when the playhead wraps back to
+ * the first enabled column. It never decreases, is not reset by
+ * pops_stop_rhythms(), and is reset only by pops_reset().
  *
  * The host can drive the two pilot/tempo lamps from this snapshot: light the
  * lamp for `bank` while stopped; while running, pulse that lamp whenever
